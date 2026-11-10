@@ -1,1 +1,50 @@
+name: Actualizar datos del visor
 
+on:
+  push:
+    branches: [main]
+    paths: ['fuentes/**', 'scripts/**', 'visor_src/**', '.github/workflows/actualizar-datos.yml']
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+concurrency:
+  group: actualizar-datos
+  cancel-in-progress: true
+
+jobs:
+  generar:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+          cache: pip
+          cache-dependency-path: scripts/requirements.txt
+
+      - name: Instalar dependencias
+        run: pip install -r scripts/requirements.txt
+
+      - name: Procesar fuentes (programa, mapeos, maestro)
+        run: python scripts/exportar_datos.py fuentes data
+
+      - name: Construir visor (docs/index.html)
+        run: python scripts/construir_visor.py --repo "${{ github.repository }}" --rama "${{ github.ref_name }}"
+
+      - name: Guardar resultados en el repositorio
+        run: |
+          git config user.name  "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add data docs
+          if git diff --cached --quiet; then echo "Sin cambios"; exit 0; fi
+          git commit -m "Datos $(jq -r .version data/manifest.json) · $(jq -r .fuentes.programa data/manifest.json)"
+          git pull --rebase
+          git push
+
+      - name: Resumen
+        run: |
+          echo "### Datos generados" >> $GITHUB_STEP_SUMMARY
+          jq -r '"- Versión: \(.version)\n- Plantíos: \(.plantios)\n- Mapeados 26-27: \(.indicadores["src_26-27"])\n- Solo 25-26: \(.indicadores["src_25-26"])\n- Sin mapeo: \(.indicadores.src_None)\n- Programa: \(.fuentes.programa)"' data/manifest.json >> $GITHUB_STEP_SUMMARY

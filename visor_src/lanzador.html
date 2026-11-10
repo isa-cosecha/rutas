@@ -1,0 +1,80 @@
+<!doctype html>
+<html lang="es">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="theme-color" content="#1d2b22">
+<title>Rutas por plantío · Programa de Corte 2026-2027</title>
+<style>
+:root{color-scheme:dark;--panel:#1d2b22;--field:#12201a;--line:#34493a;--ink:#e9efe7;--mute:#9fb3a4;--amber:#f2b134}
+*{box-sizing:border-box} html,body{height:100%;margin:0}
+body{background:var(--panel);color:var(--ink);font:15px/1.4 "Segoe UI",Arial,sans-serif;display:grid;place-items:center;padding:24px}
+.bx{width:min(460px,100%)} h1{font:700 26px "Arial Narrow",Arial,sans-serif;margin:0 0 4px} .s{color:var(--mute)}
+.pb{height:6px;background:var(--field);border-radius:3px;margin:16px 0 8px;overflow:hidden} #b{height:100%;width:2%;background:var(--amber);transition:width .2s}
+#m{color:var(--mute);font-size:14px;min-height:20px}
+#f label{display:grid;gap:4px;margin:12px 0;font-size:13px;color:var(--mute)}
+#f input{background:var(--field);color:var(--ink);border:1px solid var(--line);border-radius:6px;padding:9px 10px;font:14px inherit;width:100%}
+button{background:var(--amber);color:#2a1d00;border:0;border-radius:6px;padding:9px 14px;font:600 14px inherit;cursor:pointer}
+</style>
+</head>
+<body>
+<div class="bx"><h1>Rutas por plantío</h1><div class="s">Programa de Corte 2026-2027</div>
+  <div class="pb"><div id="b"></div></div><div id="m">Iniciando…</div>
+  <div id="f" hidden>
+    <label>URL base del repositorio (carpeta que contiene docs/ y data/)
+      <input id="fu" type="url" placeholder="https://raw.githubusercontent.com/usuario/repo/main/"></label>
+    <label>Token de GitHub (solo si el repositorio es privado)<input id="ft" type="password" autocomplete="off"></label>
+    <button id="fr">Reintentar</button>
+  </div></div>
+<script>
+(() => {
+  const $ = id => document.getElementById(id);
+  const say = (t, p) => { $('m').textContent = t; if (p != null) $('b').style.width = Math.min(100, p) + '%'; };
+  const rd = k => { try { return JSON.parse(localStorage.getItem(k) || '{}'); } catch { return {}; } };
+  const lc = rd('rp26_launch'), cf = rd('rp26_cfg');
+  let base = lc.base || '__BASE__'; if (!base.endsWith('/')) base += '/';
+  const gh = cf.gh || '';
+  const force = new URLSearchParams(location.search).has('forzar');
+  // IndexedDB compartida con el visor (mismo esquema)
+  const idb = () => new Promise((ok, ko) => { try { const r = indexedDB.open('rp26', 1); r.onupgradeneeded = () => r.result.createObjectStore('kv');
+    r.onsuccess = () => ok(r.result); r.onerror = () => ko(r.error); } catch (e) { ko(e); } });
+  const gget = async k => { try { const db = await idb(); return await new Promise(ok => { const q = db.transaction('kv').objectStore('kv').get(k); q.onsuccess = () => ok(q.result); q.onerror = () => ok(null); }); } catch { return null; } };
+  const gput = async (k, v) => { try { const db = await idb(); await new Promise(ok => { const t = db.transaction('kv', 'readwrite'); t.objectStore('kv').put(v, k); t.oncomplete = t.onerror = () => ok(); }); } catch {} };
+  function req(file, bust) {
+    const full = base + file, m = full.match(/^https:\/\/raw\.githubusercontent\.com\/([^/]+)\/([^/]+)\/([^/]+)\/(.+)$/);
+    if (gh && m) return [`https://api.github.com/repos/${m[1]}/${m[2]}/contents/${m[4]}?ref=${m[3]}`, {headers: {Authorization: 'Bearer ' + gh, Accept: 'application/vnd.github.raw'}, cache: 'no-store'}];
+    return [full + '?v=' + bust, {cache: 'no-store'}];
+  }
+  async function get(file, bust, ms, total) {
+    const ctl = new AbortController(), to = setTimeout(() => ctl.abort(), ms);
+    try { const [u, o] = req(file, bust), r = await fetch(u, {...o, signal: ctl.signal});
+      if (!r.ok) throw new Error('HTTP ' + r.status + ' al leer ' + file);
+      if (!total || !r.body) return await r.text();
+      const rr = r.body.getReader(), ch = []; let n = 0;
+      for (;;) { const {done, value} = await rr.read(); if (done) break; ch.push(value); n += value.length; say(`Descargando visor… ${Math.round(n / 1e3)} KB`, 15 + 80 * n / total); }
+      const buf = new Uint8Array(n); let o2 = 0; ch.forEach(c => { buf.set(c, o2); o2 += c.length; }); return new TextDecoder().decode(buf);
+    } finally { clearTimeout(to); }
+  }
+  function run(html) { say('Abriendo visor…', 100); document.open(); document.write(html); document.close(); }
+  function fail(err) {
+    $('f').hidden = false; $('fu').value = base; $('ft').value = gh;
+    say(`No se pudo cargar el visor (${err && err.message || err}). Revisa la conexión o la URL.`, 0);
+    $('fr').onclick = () => { try { localStorage.setItem('rp26_launch', JSON.stringify({base: $('fu').value.trim()}));
+      localStorage.setItem('rp26_cfg', JSON.stringify({...cf, gh: $('ft').value.trim()})); } catch {} location.reload(); };
+  }
+  (async () => {
+    say('Buscando la versión más reciente del visor…', 5);
+    const cached = await gget('visor');
+    let meta = null, err = null;
+    try { meta = JSON.parse(await get('docs/visor.json', Date.now(), 10000)); } catch (e) { err = e; }
+    if (meta && cached && cached.v === meta.version && !force) return run(cached.html);
+    if (meta) { try { const html = await get('docs/index.html', meta.version, 120000, meta.bytes);
+        if (!/<html/i.test(html)) throw new Error('respuesta inesperada'); await gput('visor', {v: meta.version, html}); return run(html);
+      } catch (e) { err = e; } }
+    if (cached) return run(cached.html);   // sin conexión: última copia guardada
+    fail(err);
+  })();
+})();
+</script>
+</body>
+</html>

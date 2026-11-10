@@ -16,6 +16,7 @@ ap.add_argument('--repo', help='usuario/repositorio en GitHub')
 ap.add_argument('--rama', default='main')
 ap.add_argument('--datos', help='URL base de la carpeta data/ (anula --repo)')
 ap.add_argument('--salida', default=os.path.join(ROOT, 'docs', 'index.html'))
+ap.add_argument('--base', help='URL base del repositorio para el lanzador (carpetas docs/ y data/ cuelgan de ahí)')
 a = ap.parse_args()
 cfg = json.load(open(S('config.json'), encoding='utf-8'))
 datos = a.datos or (f'https://raw.githubusercontent.com/{a.repo}/{a.rama}/data/' if a.repo else cfg.get('datos_url', ''))
@@ -169,3 +170,13 @@ html = f'''<!doctype html>
 os.makedirs(os.path.dirname(a.salida), exist_ok=True)
 open(a.salida, 'w', encoding='utf-8').write(html)
 print('visor', a.salida, round(len(html.encode()) / 1e3), 'KB', '· datos:', datos or '(sin configurar)')
+
+# ---------- visor.json (versión del visor) y lanzador local ----------
+import hashlib
+carpeta = os.path.dirname(a.salida)
+ver = hashlib.sha256(html.encode('utf-8')).hexdigest()[:12]
+json.dump({'version': ver, 'bytes': len(html.encode('utf-8'))}, open(os.path.join(carpeta, 'visor.json'), 'w'))
+base = a.base or (f'https://raw.githubusercontent.com/{a.repo}/{a.rama}/' if a.repo else re.sub(r'data/?$', '', datos))
+LAUNCHER = open(S('lanzador.html'), encoding='utf-8').read().replace('__BASE__', base)
+open(os.path.join(carpeta, 'lanzador.html'), 'w', encoding='utf-8').write(LAUNCHER)
+print('lanzador', round(len(LAUNCHER.encode()) / 1e3, 1), 'KB · visor versión', ver, '· base:', base)

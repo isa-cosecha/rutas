@@ -1,0 +1,138 @@
+<!doctype html>
+<html lang="es" data-ui="movil">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, viewport-fit=cover">
+<meta name="theme-color" content="#1d2b22"><meta name="mobile-web-app-capable" content="yes"><meta name="apple-mobile-web-app-capable" content="yes">
+<title>Rutas por plantío 26-27 (móvil)</title>
+<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.css">
+<link rel="preconnect" href="https://fonts.googleapis.com"><link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Barlow+Semi+Condensed:wght@500;600;700&family=Barlow:wght@400;500;600&display=swap" rel="stylesheet">
+<style>/*__CSS__*/
+html,body{overflow:hidden;overscroll-behavior:none;font-size:15px}
+#map{position:fixed;inset:0}
+.top{position:fixed;z-index:1000;left:0;right:0;top:0;padding:calc(8px + env(safe-area-inset-top,0px)) 10px 8px;display:flex;gap:6px;background:linear-gradient(rgba(29,43,34,.95),rgba(29,43,34,.75))}
+.top input{flex:1;font:600 17px var(--f-head);padding:11px 12px;min-width:0}
+.ib{min-width:46px;min-height:46px;padding:0;font-size:19px;position:relative;display:grid;place-items:center}
+.ib .qn{position:absolute;top:-5px;right:-5px;background:var(--red);color:#fff;border-radius:9px;font:700 11px var(--f-head);padding:1px 6px}
+#res{position:fixed;z-index:1001;left:10px;right:10px;top:calc(64px + env(safe-area-inset-top,0px));max-height:55vh;overflow:auto;background:var(--panel);border:1px solid var(--line);border-radius:8px;display:none}
+.it{display:grid;grid-template-columns:62px 1fr auto;gap:2px 8px;padding:11px 12px;border-bottom:1px solid #26382c}
+.it:active{background:var(--sel)} .it .c{font:700 17px var(--f-head)} .it .n{white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.it .m{grid-column:2/3;color:var(--mute);font-size:12.5px} .it .v{grid-column:3;justify-self:end}
+.fab{position:fixed;z-index:900;right:10px;display:grid;gap:8px;bottom:calc(var(--sheetH,0px) + 16px + env(safe-area-inset-bottom,0px));transition:bottom .2s}
+.fab button{width:50px;height:50px;border-radius:50%;font-size:21px;padding:0;box-shadow:0 2px 8px rgba(0,0,0,.4)}
+#sheet{position:fixed;z-index:1100;left:0;right:0;bottom:0;background:var(--panel);border-top:1px solid var(--line);border-radius:14px 14px 0 0;
+  padding:0 14px calc(14px + env(safe-area-inset-bottom,0px));transform:translateY(100%);transition:transform .22s;max-height:88vh;display:flex;flex-direction:column}
+#sheet.peek,#sheet.full{transform:none}
+#sheet .hd{padding:6px 0 2px;cursor:pointer;touch-action:none}
+#sheet .grip{width:42px;height:5px;border-radius:3px;background:#4b6352;margin:4px auto 8px}
+#sheet h2{font:700 23px var(--f-head);margin:0;display:flex;gap:8px;align-items:center}
+#sheet .nm{color:var(--mute);font-size:14px;display:flex;gap:6px;flex-wrap:wrap;align-items:center}
+#sheet .bd{overflow:auto;-webkit-overflow-scrolling:touch;display:none;padding-bottom:10px}
+#sheet.full .bd{display:block}
+#sheet .more{width:100%;margin-top:6px}
+#sheet.full .more{display:none}
+.nav{display:grid;grid-template-columns:1fr 1fr 1fr 1fr;gap:6px;margin-top:12px}
+.nav button{padding:10px 4px;font-size:13px}
+.vb{min-height:58px;font-size:15px} .vsend{min-height:50px;font-size:16px} .asp{font-size:14px} .asp input,.chk input,.lg input{width:20px;height:20px}
+#pnl{position:fixed;inset:0;z-index:1200;background:var(--panel);display:none;flex-direction:column;padding-top:env(safe-area-inset-top,0px)}
+#pnl.on{display:flex}
+#pnl .ph{display:flex;justify-content:space-between;align-items:center;padding:10px 12px;border-bottom:1px solid var(--line)}
+#pnl h3{font:700 20px var(--f-head);margin:0}
+#pnl .fl{display:grid;grid-template-columns:1fr 1fr;gap:6px;padding:10px 12px}
+#pnl select{font-size:15px;padding:10px}
+#pnl .st{display:flex;gap:12px;align-items:center;padding:6px 12px 10px;color:var(--mute);font-size:13px;border-bottom:1px solid var(--line)}
+#pnl .st b{color:var(--ink);font:700 17px var(--f-head)}
+#pnl .st button{margin-left:auto}
+#plist{overflow:auto;flex:1;-webkit-overflow-scrolling:touch;padding-bottom:env(safe-area-inset-bottom,0px)}
+.leaflet-top{top:calc(62px + env(safe-area-inset-top,0px))}.leaflet-control-scale{margin-bottom:calc(var(--sheetH,0px) + 12px)!important}
+dialog input{font-size:16px}
+</style>
+</head>
+<body>
+<div id="map"></div>
+<div class="top">
+  <input id="q" type="search" placeholder="Buscar plantío" autocomplete="off" enterkeyhint="search" aria-label="Buscar plantío">
+  <button class="ib" id="bFil" aria-label="Filtros y lista">☰</button>
+  <button class="ib" id="gear" aria-label="Configuración">⚙<span class="qn" hidden></span></button>
+</div>
+<div id="res" role="listbox"></div>
+<div class="fab"><button id="bLoc" aria-label="Mi ubicación">◎</button><button id="bFit" aria-label="Encuadrar lote">⤢</button></div>
+<section id="sheet" aria-label="Ficha del plantío"><div class="hd" id="shHd"><div class="grip"></div><div id="shTop"></div></div><div class="bd" id="shBd"></div></section>
+<div id="pnl">
+  <div class="ph"><h3>Filtros y lista</h3><button id="pClose" class="ib" aria-label="Cerrar">✕</button></div>
+  <div class="fl">
+    <select id="fFr"><option value="">Todos los frentes</option></select>
+    <select id="fSem"><option value="">Todas las semanas</option></select>
+    <select id="fSrc"><option value="">Cualquier mapeo</option><option value="26-27">Mapeado 26-27</option><option value="25-26">Solo 25-26</option><option value="none">Sin mapeo</option></select>
+    <select id="fVal"><option value="">Cualquier validación</option><option value="none">Sin respuesta</option><option value="Según lo planificado">Según lo planificado</option><option value="Diferente">Trabajado diferente</option><option value="pend">Pendiente de envío</option></select>
+    <select id="fFlag" style="grid-column:1/3"><option value="">Sin filtro de alerta</option></select>
+  </div>
+  <div class="st" id="pst"></div>
+  <div id="plist"></div>
+</div>
+<!--__DIALOG__-->
+<script src="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.js"></script>
+<script>/*__CORE__*/</script>
+<script>/*__UI__*/</script>
+<script>
+const $=id=>document.getElementById(id), A=App, sh=$('sheet');
+const setH=()=>document.documentElement.style.setProperty('--sheetH',(sh.classList.contains('peek')||sh.classList.contains('full'))?Math.min(sh.offsetHeight,innerHeight*.5)+'px':'0px');
+A.init('map',()=>({paddingTopLeft:[20,80],paddingBottomRight:[20,(sh.classList.contains('peek')||sh.classList.contains('full')?Math.min(sh.offsetHeight,innerHeight*.45):0)+20]}));
+A.options('fr').forEach(v=>$('fFr').add(new Option('Frente '+v,v)));
+A.options('sem').forEach(v=>$('fSem').add(new Option('Semana '+v,String(v))));
+[['sin_raja','Sin puntos de raja'],['sin_entrada','Sin ruta de entrada'],['sin_salida','Sin ruta de salida'],['raja_fuera','Rajas fuera del polígono'],
+ ['no_llega_lote','Ruta termina a >1 km del lote'],['km','Distancia ≠ Dist KM Mapeado (>15 %)'],['av','Con autovolteo']].forEach(([v,t])=>$('fFlag').add(new Option(t,v)));
+const row=o=>`<div class="it" data-id="${o.id}" role="option"><span class="c">${o.id}</span><span class="n">${A.esc(o.nm)}</span><span class="tag ${o.src==='26-27'?'t27':o.src?'t26':'tno'}">${o.src||'—'}</span>
+  <span class="m">${o.fc||''} · ${A.esc(o.fr||'')} S${o.sem??''}-${o.sec??''} · ${A.fmt(o.dP,1)} km</span><span class="v">${A.valTag(A.valOf(o.id))}</span></div>`;
+function renderList(fl){
+  $('plist').innerHTML=fl.slice(0,400).map(row).join('')+(fl.length>400?`<div style="padding:12px;color:var(--mute)">Mostrando 400 de ${fl.length}. Ajusta los filtros o usa el CSV.</div>`:'');
+  const v=fl.filter(o=>A.valOf(o.id)).length;
+  $('pst').innerHTML=`<span><b>${fl.length}</b> plantíos</span><span><b>${v}</b> validados</span><button id="bCsv" class="primary">Descargar CSV</button>`;
+  $('bCsv').onclick=A.csv;
+  const n=['fr','sem','src','flag','val'].filter(k=>A.F[k]).length; $('bFil').textContent=n?'☰'+n:'☰';
+  if(document.activeElement===$('q')&&A.F.q) showRes(fl);
+}
+function showRes(fl){ $('res').innerHTML=fl.length?fl.slice(0,40).map(row).join(''):'<div style="padding:12px;color:var(--mute)">Sin coincidencias</div>'; $('res').style.display='block'; }
+function sheetTop(o){
+  $('shTop').innerHTML=`<h2>${o.id} ${A.valTag(A.valOf(o.id))}</h2><div class="nm">${A.esc(o.nm)} ${A.srcTag(o)} <span>${o.fc||''}</span></div>${A.htmlKpis(o)}
+    <button class="more primary" id="bMore">Registrar cómo se trabajó</button>`;
+  $('bMore').onclick=e=>{e.stopPropagation();open('full');};
+}
+function sheet(o,state){
+  sheetTop(o);
+  $('shBd').innerHTML=`<div class="sec">¿Cómo se trabajó?</div>${A.htmlForm(o)}${A.htmlDetail(o)}<div class="sec">Capas</div>${A.htmlLayers(o)}
+    <div class="nav"><button id="bPrev">← Ant.</button><button id="bLot">Lote</button><button id="bAll">Ruta</button><button id="bNext">Sig. →</button></div>`;
+  A.bind($('shBd'),o);
+  $('bPrev').onclick=()=>A.step(-1); $('bNext').onclick=()=>A.step(1);
+  $('bLot').onclick=()=>{open('peek');A.fitLocal();}; $('bAll').onclick=()=>{open('peek');A.fitAll();};
+  open(state||(sh.classList.contains('full')?'full':'peek'));
+}
+function open(s){ sh.classList.remove('peek','full'); if(s) sh.classList.add(s); setTimeout(setH,230); }
+// gesto: tocar o deslizar el encabezado
+let y0=null; $('shHd').addEventListener('pointerdown',e=>{y0=e.clientY;});
+$('shHd').addEventListener('pointerup',e=>{ if(y0==null) return; const dy=e.clientY-y0; y0=null;
+  if(e.target.closest('button')) return;
+  if(dy>40) open(sh.classList.contains('full')?'peek':null); else if(dy<-40) open('full'); else open(sh.classList.contains('full')?'peek':'full'); });
+A.on('select',o=>{ $('res').style.display='none'; $('pnl').classList.remove('on'); $('q').blur(); sheet(o); });
+A.on('filtered',renderList);
+A.on('status',()=>{ renderList(A.filtered); if(A.cur) sheetTop(A.cur); });
+A.on('queue',n=>{ const q=document.querySelector('#gear .qn'); q.hidden=!n; q.textContent=n; });
+$('q').addEventListener('input',()=>{A.F.q=$('q').value;A.applyFilters(); if(!A.F.q) $('res').style.display='none'; else showRes(A.filtered);});
+$('q').addEventListener('focus',()=>{ if(A.F.q) showRes(A.filtered); });
+$('q').addEventListener('keydown',e=>{ if(e.key==='Enter'&&A.filtered[0]) A.select(A.filtered[0].id); });
+A.map.on('click',()=>{ $('res').style.display='none'; });
+$('res').addEventListener('click',e=>{const it=e.target.closest('.it'); if(it) A.select(it.dataset.id);});
+$('plist').addEventListener('click',e=>{const it=e.target.closest('.it'); if(it) A.select(it.dataset.id);});
+const bindF=(id,k)=>$(id).addEventListener('input',()=>{A.F[k]=$(id).value;A.applyFilters();});
+bindF('fFr','fr');bindF('fSem','sem');bindF('fSrc','src');bindF('fFlag','flag');bindF('fVal','val');
+$('bFil').onclick=()=>{$('res').style.display='none';$('pnl').classList.add('on');};
+$('pClose').onclick=()=>$('pnl').classList.remove('on');
+$('bLoc').onclick=()=>A.locate(); $('bFit').onclick=()=>A.cur?A.fitLocal():A.locate();
+$('gear').onclick=()=>UI.openCfg();
+A.applyFilters(); A.flush(); A.refreshStatus();
+const h=location.hash.replace('#p',''); if(A.byId.has(h)) A.select(h);
+if(!A.cfg.user||!A.cfg.url) setTimeout(()=>UI.openCfg(A.cfg.url?'Antes de empezar: escribe tu nombre.':'Antes de empezar: escribe tu nombre y pega la URL del Web App de Google Sheets.'),900);
+</script>
+</body>
+</html>

@@ -1,0 +1,108 @@
+<!doctype html>
+<html lang="es" data-ui="web">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Rutas por plantío · Programa de Corte 2026-2027 (web)</title>
+<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.css">
+<link rel="preconnect" href="https://fonts.googleapis.com"><link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Barlow+Semi+Condensed:wght@500;600;700&family=Barlow:wght@400;500;600&display=swap" rel="stylesheet">
+<style>/*__CSS__*/
+body{display:grid;grid-template-columns:390px 1fr;padding-top:env(safe-area-inset-top,0px);padding-bottom:env(safe-area-inset-bottom,0px)}
+#side{display:flex;flex-direction:column;min-height:0;border-right:1px solid var(--line)}
+header{padding:14px 16px 10px}
+.hrow{display:flex;justify-content:space-between;align-items:start;gap:8px}
+h1{font-family:var(--f-head);font-weight:700;font-size:21px;margin:0 0 2px}
+.sub{color:var(--mute);font-size:12.5px}
+#q{margin-top:10px;font:600 16px var(--f-head);padding:10px 12px}
+.filters{display:grid;grid-template-columns:1fr 1fr;gap:6px;margin-top:8px}
+.filters select{padding:6px 8px;font-size:13px}
+.stats{display:flex;gap:12px;align-items:center;padding:8px 16px;border-top:1px solid var(--line);border-bottom:1px solid var(--line);font-size:12px;color:var(--mute)}
+.stats b{color:var(--ink);font-family:var(--f-head);font-size:15px}
+.stats button{margin-left:auto;padding:5px 10px;font-size:13px}
+#list{overflow:auto;flex:1;min-height:0}
+.it{display:grid;grid-template-columns:58px 1fr auto;gap:2px 8px;padding:7px 16px;border-bottom:1px solid #26382c;cursor:pointer}
+.it:hover{background:var(--panel2)} .it.on{background:var(--sel);box-shadow:inset 3px 0 0 var(--amber)}
+.it .c{font:700 15px var(--f-head)} .it .n{white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.it .m{grid-column:2/3;color:var(--mute);font-size:12px} .it .v{grid-column:3;justify-self:end}
+#gear{padding:4px 9px;font-size:16px;position:relative}
+#gear .qn{position:absolute;top:-6px;right:-6px;background:var(--red);color:#fff;border-radius:9px;font:700 10px var(--f-head);padding:1px 5px}
+main{position:relative} #map{height:100%}
+#card{position:absolute;z-index:500;top:12px;right:12px;width:350px;max-height:calc(100% - 24px);overflow:auto;background:rgba(29,43,34,.97);border:1px solid var(--line);border-radius:8px;padding:12px 14px;display:none}
+#card h2{font:700 21px var(--f-head);margin:0}
+#card .nm{color:var(--mute)}
+#card .mn{position:absolute;top:8px;right:8px;padding:2px 9px}
+#card.min .body{display:none}
+.btns{display:flex;gap:6px;margin-top:12px;flex-wrap:wrap}
+#hint{position:absolute;z-index:400;left:50%;bottom:22px;transform:translateX(-50%);background:rgba(29,43,34,.92);padding:6px 12px;border-radius:5px;font-size:12.5px;color:var(--mute)}
+</style>
+</head>
+<body>
+<aside id="side">
+  <header>
+    <div class="hrow"><div><h1>Rutas por plantío</h1><div class="sub">Programa de Corte 2026-2027 · séptimo borrador</div></div>
+      <button id="gear" aria-label="Configuración">⚙<span class="qn" hidden></span></button></div>
+    <input id="q" type="search" placeholder="Código o nombre del plantío" autocomplete="off" aria-label="Buscar plantío">
+    <div class="filters">
+      <select id="fFr" aria-label="Frente"><option value="">Todos los frentes</option></select>
+      <select id="fSem" aria-label="Semana"><option value="">Todas las semanas</option></select>
+      <select id="fSrc" aria-label="Mapeo"><option value="">Cualquier mapeo</option><option value="26-27">Mapeado 26-27</option><option value="25-26">Solo 25-26 (pendiente)</option><option value="none">Sin mapeo</option></select>
+      <select id="fVal" aria-label="Validación"><option value="">Cualquier validación</option><option value="none">Sin respuesta</option><option value="Según lo planificado">Según lo planificado</option><option value="Diferente">Trabajado diferente</option><option value="pend">Pendiente de envío</option></select>
+      <select id="fFlag" aria-label="Alerta" style="grid-column:1/3"><option value="">Sin filtro de alerta</option></select>
+    </div>
+  </header>
+  <div class="stats" id="stats"></div>
+  <div id="list" role="listbox" aria-label="Plantíos"></div>
+</aside>
+<main>
+  <div id="map"></div>
+  <div id="card"></div>
+  <div id="hint">Busca un plantío o haz clic en un lote. Flechas ← → recorren la secuencia de corte.</div>
+</main>
+<!--__DIALOG__-->
+<script src="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.js"></script>
+<script>/*__CORE__*/</script>
+<script>/*__UI__*/</script>
+<script>
+const $=id=>document.getElementById(id), A=App;
+A.init('map',()=>({paddingTopLeft:[40,40],paddingBottomRight:[380,40]}));
+A.options('fr').forEach(v=>$('fFr').add(new Option('Frente '+v,v)));
+A.options('sem').forEach(v=>$('fSem').add(new Option('Semana '+v,String(v))));
+[['sin_raja','Sin puntos de raja'],['sin_entrada','Sin ruta de entrada'],['sin_salida','Sin ruta de salida'],['raja_fuera','Rajas fuera del polígono'],
+ ['no_llega_lote','Ruta termina a >1 km del lote'],['km','Distancia ingenio-lote ≠ Dist KM Mapeado (>15 %)'],['av','Con autovolteo']].forEach(([v,t])=>$('fFlag').add(new Option(t,v)));
+function renderList(fl){
+  const cur=A.cur;
+  $('list').innerHTML=fl.map(o=>`<div class="it${cur&&cur.id===o.id?' on':''}" data-id="${o.id}" role="option" tabindex="0"><span class="c">${o.id}</span><span class="n">${A.esc(o.nm)}</span>
+   <span class="tag ${o.src==='26-27'?'t27':o.src?'t26':'tno'}">${o.src||'—'}</span><span class="m">${o.fc||''} · ${A.esc(o.fr||'')} S${o.sem??''}-${o.sec??''} · TCH ${A.fmt(o.tch,0)} · ${A.fmt(o.dP,0)} km</span><span class="v">${A.valTag(A.valOf(o.id))}</span></div>`).join('');
+  const n=fl.length,a=fl.filter(o=>o.src==='26-27').length,v=fl.filter(o=>A.valOf(o.id)).length;
+  $('stats').innerHTML=`<span><b>${n}</b> plantíos</span><span><b>${a}</b> mapeo 26-27</span><span><b>${v}</b> validados</span><button id="bCsv" title="Descargar lo filtrado">Descargar CSV</button>`;
+  $('bCsv').onclick=A.csv;
+}
+function card(o){
+  const c=$('card');
+  c.innerHTML=`<button class="mn" aria-label="Contraer ficha">–</button><h2>${o.id}</h2><div class="nm">${A.esc(o.nm)} ${A.srcTag(o)}</div>
+   ${A.htmlKpis(o)}<div class="body"><div class="sec">¿Cómo se trabajó?</div>${A.htmlForm(o)}${A.htmlDetail(o)}
+   <div class="sec">Capas</div>${A.htmlLayers(o)}
+   <div class="btns"><button id="bLot">Encuadrar lote</button><button id="bAll">Ruta completa</button><button id="bPrev">← Anterior</button><button id="bNext">Siguiente →</button></div></div>`;
+  c.style.display='block'; A.bind(c,o);
+  c.querySelector('.mn').onclick=()=>c.classList.toggle('min');
+  $('bLot').onclick=A.fitLocal; $('bAll').onclick=A.fitAll; $('bPrev').onclick=()=>A.step(-1); $('bNext').onclick=()=>A.step(1);
+}
+A.on('filtered',renderList);
+A.on('select',o=>{ card(o); $('hint').style.display='none';
+  renderList(A.filtered); const e2=document.querySelector(`.it[data-id="${o.id}"]`); e2&&e2.scrollIntoView({block:'nearest'}); });
+A.on('status',()=>{ renderList(A.filtered); });
+A.on('queue',n=>{ const q=document.querySelector('#gear .qn'); q.hidden=!n; q.textContent=n; });
+$('list').addEventListener('click',e=>{const it=e.target.closest('.it'); if(it) A.select(it.dataset.id);});
+$('list').addEventListener('keydown',e=>{if(e.key==='Enter'){const it=e.target.closest('.it'); if(it) A.select(it.dataset.id);}});
+const bindF=(id,k)=>$(id).addEventListener('input',()=>{A.F[k]=$(id).value;A.applyFilters();});
+bindF('q','q');bindF('fFr','fr');bindF('fSem','sem');bindF('fSrc','src');bindF('fFlag','flag');bindF('fVal','val');
+$('q').addEventListener('keydown',e=>{if(e.key==='Enter'&&A.filtered[0]) A.select(A.filtered[0].id);});
+document.addEventListener('keydown',e=>{if(/INPUT|SELECT|TEXTAREA/.test(e.target.tagName)||document.querySelector('dialog[open]'))return; if(e.key==='ArrowRight')A.step(1); if(e.key==='ArrowLeft')A.step(-1);});
+$('gear').onclick=()=>UI.openCfg();
+A.applyFilters(); A.flush(); A.refreshStatus();
+const h=location.hash.replace('#p',''); if(A.byId.has(h)) A.select(h);
+if(!A.cfg.user||!A.cfg.url) setTimeout(()=>UI.toast(A.cfg.url?'Escribe tu nombre en ⚙ para enviar respuestas':'Configura tu nombre y la URL de Google Sheets en ⚙ para enviar respuestas'),1200);
+</script>
+</body>
+</html>

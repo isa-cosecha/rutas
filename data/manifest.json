@@ -1,0 +1,24 @@
+{
+ "version": "591f07ac6056",
+ "generado": "2026-11-10T16:15:32+00:00",
+ "bytes": 4854637,
+ "plantios": 1197,
+ "indicadores": {
+  "solo_25_26": 1110,
+  "src_25-26": 1110,
+  "src_26-27": 36,
+  "sin_raja": 51,
+  "sin_mapeo": 51,
+  "src_None": 51,
+  "raja_fuera": 5,
+  "no_llega_lote": 105,
+  "sin_entrada": 3,
+  "sin_poligono": 1
+ },
+ "fuentes": {
+  "programa": "Programa_de_Corte_Zafra_2026-2027__Septimo_Borrador__04-11-2026_.xlsx",
+  "mapeo_actual": "Mapeo_26-27.kml",
+  "mapeo_anterior": "Mapeo_Unificado_25-26.kmz",
+  "maestro": "Maestro_General_20260901.zip"
+ }
+}

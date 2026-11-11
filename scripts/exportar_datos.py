@@ -116,5 +116,17 @@ open(os.path.join(OUT, 'rutas.json'), 'w', encoding='utf-8').write(payload)
 manifest = {'version': ver, 'generado': dt.datetime.now(dt.timezone.utc).isoformat(timespec='seconds'),
             'bytes': len(payload.encode()), 'plantios': len(d), 'indicadores': kpi,
             'fuentes': {k: os.path.basename(v) for k, v in fuentes.items() if v}}
+# ---- capas de apoyo (proyecto QField) ----
+# a) si hay shapefiles en fuentes/capas_apoyo, se convierten aquí; b) si no, se conserva el data/capas.json ya existente
+import capas as _capas
+cap_dir = os.path.join(SRC, 'capas_apoyo'); cap_json = os.path.join(OUT, 'capas.json')
+if os.path.isdir(cap_dir):
+    cdoc = _capas.construir(cap_dir); _, cbytes = _capas.escribir(cdoc, OUT)
+    manifest['capas'] = _capas.resumen_manifest(cdoc, cbytes); print('capas de apoyo generadas desde', cap_dir)
+elif os.path.exists(cap_json):
+    cdoc = json.load(open(cap_json, encoding='utf-8'))
+    manifest['capas'] = _capas.resumen_manifest(cdoc, os.path.getsize(cap_json)); print('capas de apoyo conservadas de', cap_json)
+else:
+    print('sin capas de apoyo (opcional): ejecuta scripts/exportar_capas.py con tu proyecto QField')
 json.dump(manifest, open(os.path.join(OUT, 'manifest.json'), 'w', encoding='utf-8'), ensure_ascii=False, indent=1)
 print('datos', ver, round(len(payload) / 1e6, 2), 'MB', manifest['fuentes'])

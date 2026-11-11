@@ -75,9 +75,19 @@ BOOT = r'''
       return new TextDecoder().decode(buf);
     } finally { clearTimeout(to); }
   }
-  async function start(text, meta) {
+  // Capas de apoyo (proyecto QField): archivo aparte, con su propia versión en el manifest. Es opcional y nunca bloquea el arranque.
+  async function loadCapas(meta, forzar) {
+    const cached = await idbGet('capas');
+    if (!meta) return cached ? cached.text : null;            // sin conexión: última copia guardada
+    if (!meta.capas) return null;                             // el repositorio no publica capas
+    if (cached && cached.version === meta.capas.version && !forzar) return cached.text;
+    try { say('Descargando capas de apoyo…', 97); const t = await get('capas.json', meta.capas.version, 120000, 0); JSON.parse(t);
+      await idbPut('capas', {version: meta.capas.version, text: t}); return t; }
+    catch (e) { return cached ? cached.text : null; }
+  }
+  async function start(text, meta, ctext) {
     say('Preparando mapa…', 98);
-    createApp(JSON.parse(text), meta); initUI();
+    createApp(JSON.parse(text), meta, ctext ? JSON.parse(ctext) : null); initUI();
     $('boot').style.display = 'none';
     await UI.ensureLogin();                       // pantalla de ingreso si no hay sesión vigente
     const qs = new URLSearchParams(location.search).get('modo');
@@ -102,7 +112,7 @@ BOOT = r'''
     $('bootFile').onchange = async e => { const f = e.target.files[0]; if (!f) return; const t = await f.text();
       try { JSON.parse(t); } catch { say('El archivo no es un rutas.json válido.'); return; }
       const meta = {version: 'archivo local', generado: new Date(f.lastModified).toISOString(), origen: f.name};
-      await idbPut('datos', {meta, text: t}); start(t, meta); };
+      await idbPut('datos', {meta, text: t}); start(t, meta, null); };
   }
   (async () => {
     let force = false; try { force = sessionStorage.getItem('rp26_force') === '1'; sessionStorage.removeItem('rp26_force'); } catch {}
@@ -111,15 +121,15 @@ BOOT = r'''
     let meta = null, err = null;
     if (cfg.data) { try { meta = JSON.parse(await get('manifest.json', Date.now(), 10000)); } catch (e) { err = e; } }
     if (meta && cached && cached.meta.version === meta.version && !force)
-      return start(cached.text, {...meta, origen: 'caché del navegador (al día con GitHub)'});
+      return start(cached.text, {...meta, origen: 'caché del navegador (al día con GitHub)'}, await loadCapas(meta, force));
     if (meta) {
       try { const t = await get('rutas.json', meta.version, 180000, meta.bytes); JSON.parse(t);
         await idbPut('datos', {meta, text: t});
-        return start(t, {...meta, origen: 'descargado de GitHub', aviso: cached ? `Datos actualizados a la versión ${meta.version}` : ''});
+        return start(t, {...meta, origen: 'descargado de GitHub', aviso: cached ? `Datos actualizados a la versión ${meta.version}` : ''}, await loadCapas(meta, force));
       } catch (e) { err = e; }
     }
     if (cached) return start(cached.text, {...cached.meta, origen: 'caché del navegador (sin conexión)',
-      aviso: `Sin conexión con GitHub: usando datos guardados del ${String(cached.meta.generado || '').slice(0, 10)}`});
+      aviso: `Sin conexión con GitHub: usando datos guardados del ${String(cached.meta.generado || '').slice(0, 10)}`}, await loadCapas(null));
     fail(err);
   })();
 })();

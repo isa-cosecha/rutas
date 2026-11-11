@@ -7,7 +7,7 @@ Visor de rutas de entrada y salida, muleo, autovolteo y puntos de raja por plant
 | Carpeta | Contenido | Quién la edita |
 |---|---|---|
 | `fuentes/` | Programa de Corte (.xlsx), Mapeo 26-27 (.kml/.kmz), Mapeo 25-26 (.kmz) y Maestro General (shapefile en .zip) | **Tú** |
-| `data/` | `rutas.json` (datos del visor), `manifest.json` (versión) y el KMZ para Google Earth | GitHub Actions |
+| `data/` | `rutas.json` (datos del visor), `capas.json` (capas de apoyo del QField), `manifest.json` (versiones) y el KMZ para Google Earth | GitHub Actions (`capas.json`: lo subes tú) |
 | `docs/` | `lanzador.html` (archivo local), `index.html` (visor completo sin datos) y `visor.json` (versión del visor) | GitHub Actions |
 | `scripts/` | Procesamiento en Python | — |
 | `visor_src/` | Código fuente del visor; `config.json` guarda la URL de Apps Script | Solo si cambias el visor |
@@ -56,3 +56,15 @@ El script `apps_script/Codigo.gs` administra tres hojas del Google Sheets:
 Roles: **Administrador** y **Supervisor** registran respuestas; **Consulta** solo ve. Para dar de baja a alguien, cambia *Activo* a `No` y su sesión se cierra de inmediato.
 
 Ejecutar las pruebas del servidor: `node apps_script/harness.js test`.
+
+## Capas de apoyo del proyecto QField
+
+El visor integra las capas del proyecto QField (pozos, motores, válvulas, obstáculos, postes, ríos, red vial y quemas) en un solo archivo, `data/capas.json` (~1 MB; el proyecto original pesa 226 MB).
+
+**Cómo se muestran.** Al seleccionar un plantío aparecen solo las entidades que están a cierto radio del plantío (pozos 500 m, válvulas y obstáculos 120 m, postes 150 m, ríos 300 m…) **o** que traen su código (válvulas y obstáculos por `Lote`; quemas por `Codigo`). El modo **"Ver capas de todo el mapa"** (zoom 14 o más) muestra lo que cae en pantalla. Cada usuario enciende o apaga cada capa en la ficha del plantío y su elección se guarda en la hoja `Configuración` de Google Sheets (una columna por capa).
+
+**Qué no se importó, y por qué.** Rajas y Maestro de plantíos ya estaban (las rajas del QField coinciden con las del visor, mediana 0.1 m). Las válvulas están repetidas dentro de "Obstáculos varios" (971 de 4,403): esa capa se importa sin ellas. Las nubes de vértices de quemas no se convierten a polígonos porque no cierran anillos válidos; se dibujan como líneas de contorno.
+
+**Actualizar las capas** (cuando cambies algo en QField): ejecuta `Actualizar_capas.bat` (Windows) o `python scripts/exportar_capas.py "<carpeta del proyecto QField>" data`, y sube `data/capas.json` al repositorio. El workflow actualiza el manifiesto y los visores lo descargan solos. Los shapefiles no se suben a GitHub (la capa de quemas sola pesa más de 100 MB).
+
+**Agregar o ajustar una capa:** edita `scripts/capas_config.json` (archivo, estilo, radio, campos del popup, vínculo). Si agregas una capa nueva, agrega también su id con prefijo `x` en la lista `CAPAS` de `apps_script/Codigo.gs` para que se pueda guardar en el perfil.

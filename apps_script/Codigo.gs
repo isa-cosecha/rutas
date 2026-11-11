@@ -28,9 +28,15 @@ const HEAD_USR = ['Usuario', 'Nombre', 'Rol', 'Activo', 'Debe cambiar clave', 'S
 const CAPAS = [['lE', 'Ruta de entrada'], ['lS', 'Ruta de salida'], ['lME', 'Muleo de entrada'], ['lMS', 'Muleo de salida'],
   ['lAV', 'Muleo de autovolteo'], ['lB', 'Bahías / internas'], ['lC', 'Cabecereo / conformación'], ['lO', 'Otras líneas'],
   ['pR', 'Apertura de raja'], ['pP', 'Punto de control'], ['pX', 'Riesgo / peligro'], ['pO', 'Referencia vial'],
-  ['ref', 'Mapeo 25-26 superpuesto']];
+  ['ref', 'Mapeo 25-26 superpuesto'],
+  // Capas de apoyo del proyecto QField (ids de scripts/capas_config.json con prefijo "x"). Si agregas una capa allá, agrégala aquí.
+  ['xpozos', 'Pozos'], ['xmotores', 'Motores eléctricos'], ['xvalvulas', 'Válvulas de goteo'], ['xobstaculos', 'Otros obstáculos de riego'],
+  ['xpostes', 'Postes eléctricos'], ['xrios', 'Ríos'], ['xvial', 'Red vial'], ['xquemaP', 'Límites de quema (polígonos)'],
+  ['xquemaAC', 'Contorno de quemas (AC)'], ['xquemaPV', 'Quemas de proveedores'], ['xaa', 'Áreas a autorizar (AA)'],
+  ['xall', 'Capas de apoyo: todo el mapa (zoom 14+)']];
 const HEAD_CFG = ['Usuario'].concat(CAPAS.map(c => c[1]), ['Actualizado']);
-const CAPAS_DEFECTO = CAPAS.reduce((o, c) => (o[c[0]] = c[0] !== 'ref', o), {});
+const APAGADAS_DEFECTO = ['ref', 'xall', 'xmotores', 'xobstaculos', 'xvial', 'xaa'];   // el resto nace encendido
+const CAPAS_DEFECTO = CAPAS.reduce((o, c) => (o[c[0]] = APAGADAS_DEFECTO.indexOf(c[0]) < 0, o), {});
 
 /* ---------- utilidades ---------- */
 function json_(o) { return ContentService.createTextOutput(JSON.stringify(o)).setMimeType(ContentService.MimeType.JSON); }
@@ -48,7 +54,25 @@ function hoja_(nombre, encabezado, antes) {
   return s;
 }
 function hojaResp_() { return hoja_(HOJA_RESP, HEAD_RESP, s => s.getRange(2, 4, 5000, 1).setNumberFormat('@')); }
-function hojaCfg_() { return hoja_(HOJA_CFG, HEAD_CFG); }
+/** Hoja Configuración. Si cambió el encabezado (capas nuevas), reubica los datos de cada usuario por nombre de columna. */
+function hojaCfg_() {
+  const ss = SpreadsheetApp.getActive();
+  let s = ss.getSheetByName(HOJA_CFG);
+  if (!s) {
+    s = ss.insertSheet(HOJA_CFG);
+    s.getRange(1, 1, 1, HEAD_CFG.length).setValues([HEAD_CFG]).setFontWeight('bold'); s.setFrozenRows(1);
+    return s;
+  }
+  const w = Math.max(s.getLastColumn(), 1), viejo = s.getRange(1, 1, 1, w).getValues()[0].map(x => String(x).trim());
+  if (viejo.slice(0, HEAD_CFG.length).join('|') !== HEAD_CFG.join('|')) {
+    const n = s.getLastRow(), filas = n >= 2 ? s.getRange(2, 1, n - 1, w).getValues() : [];
+    const nuevas = filas.map(r => HEAD_CFG.map(h => { const i = viejo.indexOf(h); return i >= 0 ? r[i] : ''; }));   // columna nueva = vacío = valor por defecto
+    s.getRange(1, 1, 1, HEAD_CFG.length).setValues([HEAD_CFG]).setFontWeight('bold');
+    if (nuevas.length) s.getRange(2, 1, nuevas.length, HEAD_CFG.length).setValues(nuevas);
+    s.setFrozenRows(1);
+  }
+  return s;
+}
 function hojaUsr_() {
   return hoja_(HOJA_USR, HEAD_USR, s => {
     s.getRange(2, 1, 500, 1).setNumberFormat('@');

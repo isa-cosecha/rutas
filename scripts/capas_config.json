@@ -1,0 +1,503 @@
+{
+  "_nota": "Cada capa se busca por nombre de archivo (sin extensión) dentro de la carpeta del proyecto QField. 'radio' = metros alrededor del plantío seleccionado. 'vinculo' = campo que relaciona la entidad con el código del plantío (se muestra aunque quede fuera del radio). Los ids deben existir también en apps_script/Codigo.gs (lista CAPAS) para guardarse en el perfil de usuario.",
+  "gap_contorno_m": 40,
+  "capas": [
+    {
+      "id": "pozos",
+      "nombre": "Pozos",
+      "archivo": "Pozos",
+      "tipo": "punto",
+      "radio": 500,
+      "defecto": true,
+      "estilo": {
+        "color": "#5a5551",
+        "relleno": "#fab07c",
+        "r": 6,
+        "peso": 2.5
+      },
+      "titulo": "nombre del",
+      "popup": [
+        [
+          "nombre del",
+          "Nombre"
+        ],
+        [
+          "id ana",
+          "ID ANA"
+        ],
+        [
+          "region",
+          "Región"
+        ],
+        [
+          "tipo de ri",
+          "Tipo de riego"
+        ],
+        [
+          "uso",
+          "Uso"
+        ],
+        [
+          "compania",
+          "Compañía"
+        ],
+        [
+          "municipio",
+          "Municipio"
+        ],
+        [
+          "subcuenca",
+          "Subcuenca"
+        ],
+        [
+          "msnm",
+          "msnm"
+        ]
+      ]
+    },
+    {
+      "id": "motores",
+      "nombre": "Motores eléctricos",
+      "archivo": "Motores Electricos",
+      "tipo": "punto",
+      "radio": 500,
+      "defecto": false,
+      "estilo": {
+        "color": "#ffee2f",
+        "relleno": "#becf50",
+        "r": 6,
+        "peso": 2.5
+      },
+      "titulo": "nombre del",
+      "popup": [
+        [
+          "nombre del",
+          "Nombre"
+        ],
+        [
+          "id ana",
+          "ID ANA"
+        ],
+        [
+          "region",
+          "Región"
+        ],
+        [
+          "tipo de ri",
+          "Tipo de riego"
+        ],
+        [
+          "uso",
+          "Uso"
+        ],
+        [
+          "compania",
+          "Compañía"
+        ],
+        [
+          "municipio",
+          "Municipio"
+        ],
+        [
+          "msnm",
+          "msnm"
+        ]
+      ]
+    },
+    {
+      "id": "valvulas",
+      "nombre": "Válvulas de goteo",
+      "archivo": "Valvulas Goteo",
+      "tipo": "punto",
+      "radio": 120,
+      "defecto": true,
+      "vinculo": "lote",
+      "estilo": {
+        "color": "#232323",
+        "relleno": "#4787e7",
+        "r": 5,
+        "peso": 1.2
+      },
+      "titulo": "obstaculo",
+      "popup": [
+        [
+          "obstaculo",
+          "Tipo"
+        ],
+        [
+          "lote",
+          "Lote"
+        ],
+        [
+          "finca",
+          "Finca"
+        ],
+        [
+          "region",
+          "Región"
+        ],
+        [
+          "tipo de ri",
+          "Tipo de riego"
+        ],
+        [
+          "rtk",
+          "RTK"
+        ],
+        [
+          "ingresado",
+          "Ingresado"
+        ]
+      ]
+    },
+    {
+      "id": "obstaculos",
+      "nombre": "Otros obstáculos de riego",
+      "archivo": "Obstaculos_Varios",
+      "tipo": "punto",
+      "radio": 120,
+      "defecto": false,
+      "vinculo": "lote",
+      "excluir": {
+        "campo": "obstaculo",
+        "valores": [
+          "Valvula Hidraulica"
+        ],
+        "motivo": "ya están en la capa Válvulas de goteo"
+      },
+      "categoria": {
+        "campo": "obstaculo",
+        "colores": {
+          "Lavado": "#7dd3fc",
+          "Hidrante": "#ef4444",
+          "Poste Electrico": "#fbe625",
+          "Valvula de Aire": "#2dd4bf",
+          "CropX": "#a78bfa"
+        },
+        "otro": "#d1d5db"
+      },
+      "estilo": {
+        "color": "#232323",
+        "relleno": "#d1d5db",
+        "r": 4,
+        "peso": 1
+      },
+      "titulo": "obstaculo",
+      "popup": [
+        [
+          "obstaculo",
+          "Tipo"
+        ],
+        [
+          "nombre obs",
+          "Nombre"
+        ],
+        [
+          "lote",
+          "Lote"
+        ],
+        [
+          "finca",
+          "Finca"
+        ],
+        [
+          "region",
+          "Región"
+        ],
+        [
+          "tipo de ri",
+          "Tipo de riego"
+        ],
+        [
+          "rtk",
+          "RTK"
+        ],
+        [
+          "ingresado",
+          "Ingresado"
+        ]
+      ]
+    },
+    {
+      "id": "postes",
+      "nombre": "Postes eléctricos",
+      "archivo": "Postes Electricos",
+      "tipo": "punto",
+      "radio": 150,
+      "defecto": true,
+      "estilo": {
+        "color": "#000000",
+        "relleno": "#fbe625",
+        "r": 5,
+        "peso": 1.2
+      },
+      "titulo": "name",
+      "popup": [
+        [
+          "name",
+          "Identificador"
+        ]
+      ]
+    },
+    {
+      "id": "rios",
+      "nombre": "Ríos",
+      "archivo": "Rios Occidente",
+      "tipo": "linea",
+      "radio": 300,
+      "defecto": true,
+      "simplificar_m": 3,
+      "estilo": {
+        "color": "#23cdff",
+        "peso": 3
+      },
+      "titulo": "name",
+      "popup": [
+        [
+          "name",
+          "Nombre"
+        ],
+        [
+          "waterway",
+          "Tipo"
+        ]
+      ]
+    },
+    {
+      "id": "vial",
+      "nombre": "Red vial",
+      "archivo": "Red Vial",
+      "tipo": "linea",
+      "radio": 150,
+      "defecto": false,
+      "simplificar_m": 2,
+      "categoria": {
+        "campo": "categoria",
+        "colores": {
+          "principal": "#fd0613",
+          "alterna": "#d06106",
+          "terciario": "#f5de08"
+        },
+        "otro": "#9ca3af"
+      },
+      "estilo": {
+        "color": "#f5de08",
+        "peso": 3
+      },
+      "titulo": "categoria",
+      "popup": [
+        [
+          "categoria",
+          "Categoría"
+        ],
+        [
+          "tipo",
+          "Tipo"
+        ],
+        [
+          "vehiculos",
+          "Vehículos"
+        ],
+        [
+          "nota",
+          "Nota"
+        ],
+        [
+          "dist (km)",
+          "Dist (km)"
+        ],
+        [
+          "rutas",
+          "Ruta"
+        ]
+      ]
+    },
+    {
+      "id": "quemaP",
+      "nombre": "Límites de quema (polígonos)",
+      "archivo": "Limites_Quemas_P",
+      "tipo": "poligono",
+      "radio": 60,
+      "defecto": true,
+      "vinculo": "codigo",
+      "simplificar_m": 1.5,
+      "estilo": {
+        "color": "#fbe625",
+        "relleno": "#fbe625",
+        "peso": 2,
+        "dash": "6 4",
+        "opacidad": 0.1
+      },
+      "titulo": "nombre",
+      "popup": [
+        [
+          "nombre",
+          "Plantío"
+        ],
+        [
+          "codigo",
+          "Código"
+        ],
+        [
+          "cuadro",
+          "Cuadro"
+        ],
+        [
+          "estado",
+          "Estado"
+        ],
+        [
+          "region",
+          "Región"
+        ],
+        [
+          "propietari",
+          "Propietario"
+        ],
+        [
+          "variedad",
+          "Variedad"
+        ],
+        [
+          "area_agric",
+          "Área agrícola (ha)"
+        ],
+        [
+          "zafra",
+          "Zafra"
+        ]
+      ]
+    },
+    {
+      "id": "quemaAC",
+      "nombre": "Contorno de quemas (AC)",
+      "archivo": "Limites_Quemas",
+      "tipo": "contorno",
+      "radio": 60,
+      "defecto": true,
+      "vinculo": "codigo",
+      "agrupar": [
+        "codigo",
+        "cuadro"
+      ],
+      "orden": "id",
+      "simplificar_m": 1.5,
+      "estilo": {
+        "color": "#fbe625",
+        "peso": 2,
+        "dash": "2 5"
+      },
+      "titulo": "nombre",
+      "popup": [
+        [
+          "nombre",
+          "Plantío"
+        ],
+        [
+          "codigo",
+          "Código"
+        ],
+        [
+          "cuadro",
+          "Cuadro"
+        ],
+        [
+          "estado",
+          "Estado"
+        ],
+        [
+          "region",
+          "Región"
+        ],
+        [
+          "propietari",
+          "Propietario"
+        ],
+        [
+          "variedad",
+          "Variedad"
+        ],
+        [
+          "zafra",
+          "Zafra"
+        ]
+      ]
+    },
+    {
+      "id": "quemaPV",
+      "nombre": "Quemas de proveedores",
+      "archivo": "Limites_Quemas_Proveedores",
+      "tipo": "contorno",
+      "radio": 60,
+      "defecto": true,
+      "vinculo": "codigo",
+      "agrupar": [
+        "codigo",
+        "cuadro"
+      ],
+      "simplificar_m": 1.5,
+      "estilo": {
+        "color": "#ff7f00",
+        "peso": 2,
+        "dash": "2 5"
+      },
+      "titulo": "nombre",
+      "popup": [
+        [
+          "nombre",
+          "Plantío"
+        ],
+        [
+          "codigo",
+          "Código"
+        ],
+        [
+          "cuadro",
+          "Cuadro"
+        ],
+        [
+          "estado",
+          "Estado"
+        ],
+        [
+          "region",
+          "Región"
+        ],
+        [
+          "propietari",
+          "Propietario"
+        ],
+        [
+          "variedad",
+          "Variedad"
+        ],
+        [
+          "zafra",
+          "Zafra"
+        ]
+      ]
+    },
+    {
+      "id": "aa",
+      "nombre": "Áreas a autorizar (AA)",
+      "archivo": "Limites_Quemas_Proveedores_AAutorizar",
+      "tipo": "contorno",
+      "radio": 60,
+      "defecto": false,
+      "agrupar": [],
+      "simplificar_m": 1.5,
+      "estilo": {
+        "color": "#54b04a",
+        "peso": 2,
+        "dash": "2 5"
+      },
+      "titulo": "departamen",
+      "popup": [
+        [
+          "departamen",
+          "Departamento"
+        ]
+      ]
+    }
+  ]
+}

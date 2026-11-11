@@ -73,3 +73,6 @@ dialog details{margin:10px 0;font-size:13px} dialog summary{cursor:pointer;color
 .presets button{padding:4px 10px;font-size:13px}
 .pstate{font-size:12px;color:var(--mute);margin-top:8px}
 .pstate[data-s=pend]{color:var(--amber)} .pstate[data-s=err],.pstate[data-s=off]{color:#ff9a8c}
+/* ---- capas de apoyo ---- */
+.dotc{width:13px;height:13px;border-radius:50%;border:2.5px solid;display:inline-block;box-sizing:border-box}
+.polc{width:16px;height:11px;border:2px dashed;display:inline-block;box-sizing:border-box}

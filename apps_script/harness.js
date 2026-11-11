@@ -19,6 +19,7 @@ function nuevoEntorno() {
   }
   class Hoja {
     constructor(n) { this.n = n; this.d = []; }
+    getLastColumn() { let m = 0; this.d.forEach(r => { if (r) r.forEach((x, j) => { if (x !== '' && x !== undefined && j + 1 > m) m = j + 1; }); }); return m; }
     getLastRow() { let l = 0; this.d.forEach((r, i) => { if (r && r.some(x => x !== '' && x !== undefined)) l = i + 1; }); return l; }
     getRange(r, c, nr = 1, nc = 1) { return new Rango(this, r, c, nr, nc); }
     setFrozenRows() {}
@@ -124,6 +125,22 @@ if (require.main === module) {
     E.adelantar(31 * 86400000); r = E.post({action: 'sync', token: t3}); T('la sesión expira a los 30 días', !r.ok && r.code === 'sesion', r);
     r = E.post({action: 'borrar'}); T('acción desconocida', !r.ok, r);
     r = JSON.parse(E.ctx.doGet().getContent()); T('doGet no expone datos', r.ok && !r.status && !r.usuarios, r);
+    // ---- capas de apoyo (QField) en el perfil ----
+    const E2 = nuevoEntorno(); const c9 = E2.admin('crearUsuario_', 'nuevo', 'Nuevo', 'Supervisor'); E2.post({action: 'cambiar_clave', usuario: 'nuevo', actual: c9.codigo, nueva: 'abcdef'});
+    const lg = E2.post({action: 'login', usuario: 'nuevo', clave: 'abcdef'}); const pf = lg.prefs;
+    T('usuario nuevo: capas de apoyo con valores por defecto (pozos sí, motores no, todo el mapa no)', pf.xpozos === true && pf.xvalvulas === true && pf.xpostes === true && pf.xmotores === false && pf.xobstaculos === false && pf.xvial === false && pf.xaa === false && pf.xall === false && pf.xquemaP === true, pf);
+    r = E2.post({action: 'prefs_set', token: lg.token, prefs: {xpozos: false, xvial: true, xall: true, xmotores: true}}); T('guardar capas de apoyo', r.ok, r);
+    r = E2.post({action: 'sync', token: lg.token}); T('sync devuelve capas de apoyo guardadas', r.prefs.xpozos === false && r.prefs.xvial === true && r.prefs.xall === true && r.prefs.xmotores === true && r.prefs.xpostes === true, r.prefs);
+    const hd = E2.hojas['Configuración'].d[0]; T('encabezado de Configuración incluye las capas de apoyo', hd.includes('Pozos') && hd.includes('Red vial') && hd.includes('Capas de apoyo: todo el mapa (zoom 14+)') && hd[hd.length - 1] === 'Actualizado', hd);
+    // migración: hoja creada con la versión anterior (13 capas) y datos de un usuario existente
+    const E3 = nuevoEntorno(); E3.admin('hojaUsr_'); const viejo = ['Usuario', 'Ruta de entrada', 'Ruta de salida', 'Muleo de entrada', 'Muleo de salida', 'Muleo de autovolteo', 'Bahías / internas', 'Cabecereo / conformación', 'Otras líneas', 'Apertura de raja', 'Punto de control', 'Riesgo / peligro', 'Referencia vial', 'Mapeo 25-26 superpuesto', 'Actualizado'];
+    const hv = E3.ctx.SpreadsheetApp.getActive().insertSheet('Configuración'); hv.getRange(1, 1, 1, viejo.length).setValues([viejo]);
+    hv.getRange(2, 1, 1, viejo.length).setValues([['antiguo', 'No', 'Sí', 'Sí', 'Sí', 'Sí', 'No', 'Sí', 'Sí', 'No', 'Sí', 'Sí', 'Sí', 'Sí', '2026-11-01']]);
+    E3.admin('hojaCfg_'); const m = E3.hojas['Configuración'].d; const col = n => m[0].indexOf(n);
+    T('migración: conserva los valores de cada usuario por nombre de columna', m[1][0] === 'antiguo' && m[1][col('Ruta de entrada')] === 'No' && m[1][col('Apertura de raja')] === 'No' && m[1][col('Mapeo 25-26 superpuesto')] === 'Sí' && m[1][col('Actualizado')] === '2026-11-01', m[1]);
+    T('migración: las capas nuevas quedan vacías (= por defecto) y el encabezado se actualiza', m[1][col('Pozos')] === '' && m[1][col('Capas de apoyo: todo el mapa (zoom 14+)')] === '' && m[0].length === 27, [m[0].length, m[1][col('Pozos')]]);
+    const lgA = (() => { const cA = E3.admin('crearUsuario_', 'antiguo', 'Antiguo', 'Supervisor'); E3.post({action: 'cambiar_clave', usuario: 'antiguo', actual: cA.codigo, nueva: 'abcdef'}); return E3.post({action: 'login', usuario: 'antiguo', clave: 'abcdef'}); })();
+    T('migración: usuario antiguo conserva su vista y recibe defaults en las capas nuevas', lgA.prefs.lE === false && lgA.prefs.xpozos === true && lgA.prefs.xall === false, lgA.prefs);
     console.log(`\n${ok} correctas, ${mal} fallas`); process.exit(mal ? 1 : 0);
   }
 }

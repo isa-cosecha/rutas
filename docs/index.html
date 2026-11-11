@@ -748,6 +748,9 @@ dialog details{margin:10px 0;font-size:13px} dialog summary{cursor:pointer;color
 .presets button{padding:4px 10px;font-size:13px}
 .pstate{font-size:12px;color:var(--mute);margin-top:8px}
 .pstate[data-s=pend]{color:var(--amber)} .pstate[data-s=err],.pstate[data-s=off]{color:#ff9a8c}
+/* ---- capas de apoyo ---- */
+.dotc{width:13px;height:13px;border-radius:50%;border:2.5px solid;display:inline-block;box-sizing:border-box}
+.polc{width:16px;height:11px;border:2px dashed;display:inline-block;box-sizing:border-box}
 
 #modeSw{margin-right:auto} dialog .row{flex-wrap:wrap}
 #boot{position:fixed;inset:0;z-index:5000;background:var(--panel);display:grid;place-items:center;padding:24px}
@@ -825,7 +828,7 @@ dialog details{margin:10px 0;font-size:13px} dialog summary{cursor:pointer;color
 <script>/* Núcleo compartido: datos, mapa, filtros, CSV, Google Sheets (con cola offline) y GPS. */
 const CONFIG = {"url": "https://script.google.com/macros/s/AKfycbzXQMxFuNkgmv3Xhaz4zPw7TmLD9lsiu9k6izBYisLMYpKBHSebexzwz6GAiqSCPQA5/exec", "data": "https://raw.githubusercontent.com/isa-cosecha/rutas/main/data/"};
 let App;
-function createApp(RAW, META) {
+function createApp(RAW, META, CAPAS) {
 App = (() => {
   const G = RAW.G, D = RAW.D, byId = new Map(D.map(o => [o.id, o]));
   const dec = i => { const a = G[i], o = []; let x = 0, y = 0; for (let k = 0; k < a.length; k += 2) { x += a[k]; y += a[k + 1]; o.push([y / 1e6, x / 1e6]); } return o; };
@@ -836,6 +839,10 @@ App = (() => {
     raja_fuera:'Rajas fuera del polígono',sin_poligono:'Sin polígono en Maestro',no_llega_lote:'Ruta termina a >1 km del lote',no_conecta_ingenio:'Ruta no conecta al ingenio'};
   const ASPECTOS = ['Ruta de entrada','Ruta de salida','Puntos de raja','Muleo / autovolteo','Fecha o secuencia','Frente o equipo','Otro'];
   const vis = Object.fromEntries([...Object.keys(CAT).map(k => ['l' + k, true]), ...Object.keys(PCAT).map(k => ['p' + k, true]), ['ref', false]]);
+  // Capas de apoyo (proyecto QField): cada una tiene una clave 'x'+id en la vista del usuario. 'xall' = ver todo el mapa.
+  const CAPS = (CAPAS && CAPAS.capas) || [];
+  CAPS.forEach(c => { vis['x' + c.id] = !!c.defecto; });
+  if (CAPS.length) vis.xall = false;
   const esc = s => String(s ?? '').replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
   const fmt = (x, d = 1) => x == null || x === '' ? '—' : (typeof x === 'number' ? x.toLocaleString('es-NI', {maximumFractionDigits: d}) : esc(x));
   const strip = s => String(s || '').normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase();
@@ -866,6 +873,107 @@ App = (() => {
   const inPlantio = (o, pt) => o._bb && pt[0] >= o._bb[0] && pt[0] <= o._bb[2] && pt[1] >= o._bb[1] && pt[1] <= o._bb[3]
     && o._rings.some(poly => pip(pt, poly[0]) && !poly.slice(1).some(h => pip(pt, h)));
 
+  // ---------- capas de apoyo: índice espacial y filtro por plantío ----------
+  const KLAT = 111320, KLON = 111320 * Math.cos(12.5 * Math.PI / 180), CELL = 0.01, ckey = (cx, cy) => cx * 20000 + cy;
+  function capaPrep(c) {
+    if (c._ok) return c; c._ok = true;
+    const grid = new Map(), big = [], put = (k, i) => { const a = grid.get(k); if (a) a.push(i); else grid.set(k, [i]); };
+    if (c.tipo === 'p') {
+      const lon = new Float64Array(c.n), lat = new Float64Array(c.n); let x = 0, y = 0;
+      for (let i = 0; i < c.n; i++) { x += c.g[2 * i]; y += c.g[2 * i + 1]; lon[i] = x / 1e6; lat[i] = y / 1e6; put(ckey(Math.floor(lon[i] / CELL), Math.floor(lat[i] / CELL)), i); }
+      c._lon = lon; c._lat = lat; c.g = null;
+    } else {
+      c._ln = new Array(c.n); c._bb = new Float64Array(c.n * 4);
+      for (let i = 0; i < c.n; i++) {
+        const a = c.l[i], m = a.length / 2, ll = new Array(m); let x = 0, y = 0, s0 = 90, w = 180, n0 = -90, e = -180;
+        for (let k = 0; k < m; k++) { x += a[2 * k]; y += a[2 * k + 1]; const lo = x / 1e6, la = y / 1e6; ll[k] = [la, lo]; if (la < s0) s0 = la; if (la > n0) n0 = la; if (lo < w) w = lo; if (lo > e) e = lo; }
+        c._ln[i] = ll; c._bb[4 * i] = s0; c._bb[4 * i + 1] = w; c._bb[4 * i + 2] = n0; c._bb[4 * i + 3] = e;
+        const x0 = Math.floor(w / CELL), x1 = Math.floor(e / CELL), y0 = Math.floor(s0 / CELL), y1 = Math.floor(n0 / CELL);
+        if ((x1 - x0 + 1) * (y1 - y0 + 1) > 400) big.push(i); else for (let cx = x0; cx <= x1; cx++) for (let cy = y0; cy <= y1; cy++) put(ckey(cx, cy), i);
+      }
+      c.l = null;
+    }
+    c._grid = grid; c._big = big; c._byLink = null;
+    if (c.K) { const m = new Map(); c.r.forEach((row, i) => { const k = c.K[row]; if (k >= 0) { const key = c.S[k]; if (!m.has(key)) m.set(key, []); m.get(key).push(i); } }); c._byLink = m; }
+    return c;
+  }
+  function capaBBox(c, s0, w, n0, e) {                 // entidades cuyo punto o caja cae en el rectángulo
+    capaPrep(c);
+    const x0 = Math.floor(w / CELL), x1 = Math.floor(e / CELL), y0 = Math.floor(s0 / CELL), y1 = Math.floor(n0 / CELL);
+    if ((x1 - x0 + 1) * (y1 - y0 + 1) > 2500) return [];
+    const seen = new Set(), out = [];
+    const take = i => { if (seen.has(i)) return; seen.add(i);
+      if (c.tipo === 'p') { if (c._lat[i] >= s0 && c._lat[i] <= n0 && c._lon[i] >= w && c._lon[i] <= e) out.push(i); }
+      else { const b = c._bb, j = 4 * i; if (b[j] <= n0 && b[j + 2] >= s0 && b[j + 1] <= e && b[j + 3] >= w) out.push(i); } };
+    for (let cx = x0; cx <= x1; cx++) for (let cy = y0; cy <= y1; cy++) { const a = c._grid.get(ckey(cx, cy)); if (a) a.forEach(take); }
+    c._big.forEach(take);
+    return out;
+  }
+  const dSeg = (ax, ay, bx, by) => { const dx = bx - ax, dy = by - ay, l2 = dx * dx + dy * dy; let t = l2 ? -(ax * dx + ay * dy) / l2 : 0; t = Math.max(0, Math.min(1, t)); return Math.hypot(ax + t * dx, ay + t * dy); };
+  function distPlantio(o, la, lo) {                    // metros al polígono del plantío (0 si está dentro)
+    if (inPlantio(o, [la, lo])) return 0;
+    let best = Infinity;
+    for (const poly of o._rings) { const r = poly[0];
+      for (let i = 1; i < r.length; i++) { const d = dSeg((r[i - 1][1] - lo) * KLON, (r[i - 1][0] - la) * KLAT, (r[i][1] - lo) * KLON, (r[i][0] - la) * KLAT); if (d < best) best = d; } }
+    return best;
+  }
+  function lineaCerca(o, ll, rad) {                    // ¿algún tramo está a ≤ rad metros del plantío?
+    const S0 = o._bb[0] - rad / KLAT, N0 = o._bb[2] + rad / KLAT, W0 = o._bb[1] - rad / KLON, E0 = o._bb[3] + rad / KLON;
+    const dentro = (la, lo) => la >= S0 && la <= N0 && lo >= W0 && lo <= E0;
+    for (let i = 0; i < ll.length; i++) {
+      const a = ll[i];
+      if (dentro(a[0], a[1]) && distPlantio(o, a[0], a[1]) <= rad) return true;
+      if (i) { const b = ll[i - 1], len = Math.hypot((a[1] - b[1]) * KLON, (a[0] - b[0]) * KLAT);
+        if (len > rad) { const k = Math.ceil(len / (rad / 2));
+          for (let t = 1; t < k; t++) { const la = b[0] + (a[0] - b[0]) * t / k, lo = b[1] + (a[1] - b[1]) * t / k; if (dentro(la, lo) && distPlantio(o, la, lo) <= rad) return true; } } }
+    }
+    return false;
+  }
+  const poligonoCerca = (o, ll, rad) => lineaCerca(o, ll, rad) || (o._cen && pip(o._cen, ll));
+  function capasCerca(o) {                             // por capa: entidades dentro del radio O con el código del plantío
+    if (o._cap) return o._cap;
+    const res = {};
+    CAPS.forEach(c => {
+      capaPrep(c); const rad = c.radio, idx = new Set();
+      if (o._bb) {
+        capaBBox(c, o._bb[0] - rad / KLAT, o._bb[1] - rad / KLON, o._bb[2] + rad / KLAT, o._bb[3] + rad / KLON).forEach(i => {
+          if (c.tipo === 'p' ? distPlantio(o, c._lat[i], c._lon[i]) <= rad : c.tipo === 'l' ? lineaCerca(o, c._ln[i], rad) : poligonoCerca(o, c._ln[i], rad)) idx.add(i);
+        });
+      }
+      if (c._byLink && c._byLink.has(o.id)) c._byLink.get(o.id).forEach(i => idx.add(i));
+      res[c.id] = [...idx];
+    });
+    return (o._cap = res);
+  }
+  const capaColor = (c, row) => { if (!c.cat) return null; const k = c.C[row]; return (k >= 0 && c.cat.map[k]) || c.cat.otro; };
+  function capaPopup(c, i) {
+    const row = c.A[c.r[i]], g = j => (row[j] >= 0 ? c.S[row[j]] : null), t = c.titulo >= 0 ? g(c.titulo) : null;
+    return `<b>${esc(c.nombre)}</b>${t ? ' · ' + esc(t) : ''}<br>` + c.popup.map((lab, j) => (j === c.titulo || g(j) == null) ? '' : `<span style="color:#6b7a70">${esc(lab)}:</span> ${esc(g(j))}`).filter(Boolean).join('<br>');
+  }
+  function capaAdd(c, i, grp) {
+    const st = c.estilo, col = capaColor(c, c.r[i]), dash = st.dash || null;
+    if (c.tipo === 'p') grp.addLayer(L.circleMarker([c._lat[i], c._lon[i]], {radius: st.r, color: st.color, weight: st.peso, fillColor: col || st.relleno, fillOpacity: .95}).bindPopup(() => capaPopup(c, i)));
+    else if (c.tipo === 'l') grp.addLayer(L.polyline(c._ln[i], {color: col || st.color, weight: st.peso, dashArray: dash, opacity: .9}).bindPopup(() => capaPopup(c, i)));
+    else {   // polígono: el relleno no es interactivo (no debe tapar los clics de los plantíos); el borde sí muestra datos
+      grp.addLayer(L.polygon(c._ln[i], {stroke: false, fillColor: st.relleno || st.color, fillOpacity: st.opacidad ?? .1, interactive: false}));
+      grp.addLayer(L.polyline([...c._ln[i], c._ln[i][0]], {color: st.color, weight: st.peso, dashArray: dash, opacity: .9}).bindPopup(() => capaPopup(c, i)));
+    }
+  }
+  const capasDibujar = (o, grp) => { const near = capasCerca(o); CAPS.forEach(c => { if (vis['x' + c.id]) near[c.id].forEach(i => capaAdd(c, i, grp)); }); };
+  let capAll = null, capAllT = null; const capWarn = {};
+  function capasTodo() {                               // modo "todo el mapa": lo que cae en pantalla (zoom ≥ 14)
+    if (!map || !capAll) return; capAll.clearLayers();
+    if (!vis.xall || !CAPS.length) return;
+    if (map.getZoom() < 14) { if (!capWarn.z) { capWarn.z = 1; emit('toast', 'Acerca el mapa (zoom 14 o más) para ver las capas de apoyo de todo el mapa.'); } return; }
+    capWarn.z = 0; const b = map.getBounds().pad(0.15);
+    CAPS.forEach(c => { if (!vis['x' + c.id]) return;
+      const idx = capaBBox(c, b.getSouth(), b.getWest(), b.getNorth(), b.getEast());
+      if (idx.length > 5000) { if (!capWarn[c.id]) { capWarn[c.id] = 1; emit('toast', `${c.nombre}: demasiadas entidades en pantalla (${idx.length}). Acerca más el mapa.`); } return; }
+      capWarn[c.id] = 0; idx.forEach(i => capaAdd(c, i, capAll)); });
+  }
+  const capasTodoPronto = () => { clearTimeout(capAllT); capAllT = setTimeout(capasTodo, 200); };
+  const redibujar = () => { if (cur) draw(cur); capasTodo(); };
+
   // ---------- mapa ----------
   let map, sel, ctx, cur = null, curLocal = null, curAll = null, padFn = () => ({padding: [30, 30]}), meLayer = null;
   const SRC_COL = {'26-27': '#f2b134', '25-26': '#5fc4b0', null: '#e5604f'};
@@ -878,7 +986,8 @@ App = (() => {
     L.control.layers({'Satélite': sat, 'Calles (OSM)': osm}, {'Nombres': lbl}, {position: L.Browser.mobile ? 'topright' : 'bottomright'}).addTo(map);
     L.control.scale({imperial: false}).addTo(map);
     // Un solo lienzo (preferCanvas): si hubiera dos, el de arriba absorbe los clics y los lotes de abajo dejan de responder.
-    ctx = L.layerGroup().addTo(map); sel = L.layerGroup().addTo(map);
+    ctx = L.layerGroup().addTo(map); capAll = L.layerGroup().addTo(map); sel = L.layerGroup().addTo(map);
+    map.on('moveend', capasTodoPronto);
     const all = L.latLngBounds();
     D.forEach(o => { if (!o._rings.length) return;
       const lay = L.polygon(o._rings, {color: SRC_COL[o.src], weight: 1, fillOpacity: .12, opacity: .8});
@@ -892,6 +1001,7 @@ App = (() => {
     sel.clearLayers(); const local = L.latLngBounds(), all = L.latLngBounds();
     o.pol.forEach((p, i) => { const pl = L.polygon(o._rings[i], {color: '#ffe14d', weight: 3, fillColor: '#ffe14d', fillOpacity: .15})
       .bindTooltip(`Cuadro ${esc(p.q)} · ${p.ha} ha`, {sticky: true}).addTo(sel); local.extend(pl.getBounds()); all.extend(pl.getBounds()); });
+    if (CAPS.length && !vis.xall) capasDibujar(o, sel);
     const layer = (feats, ghost) => feats.forEach(f => {
       if (f.t === 'l') { if (!vis['l' + f.c]) return; const ll = dec(f.g), c = CAT[f.c];
         const pl = L.polyline(ll, {color: c[1], weight: ghost ? 2 : c[2], dashArray: ghost ? '4 6' : c[3], opacity: ghost ? .55 : .95})
@@ -943,15 +1053,16 @@ App = (() => {
 
   // ---------- CSV ----------
   function csv() {
+    const CSVCAP = CAPS.filter(c => ['postes', 'valvulas', 'obstaculos', 'pozos'].includes(c.id));
     const H = ['Código','Nombre','Frente','Semana','Secuencia','Fecha corte','Variedad','N. cortes','Ha','Toneladas','TCH','Región','Tenencia','Municipio','Tipo de corte',
       'Carretas','Ubicación','Mulero','Mapeo usado','Km ingenio-lote (entrada)','Km ingenio-lote (salida)','Km ingenio-lote (promedio)','Dist Km (programa)',
-      'Dist KM Mapeado (programa)','Dif. % vs Dist KM Mapeado','TM·km','Rajas','% rajas dentro del lote','Autovolteo','Alertas','Validación','Nota validación','Usuario validación','Fecha validación'];
+      'Dist KM Mapeado (programa)','Dif. % vs Dist KM Mapeado','TM·km','Rajas','% rajas dentro del lote','Autovolteo','Alertas','Validación','Nota validación','Usuario validación','Fecha validación', ...CSVCAP.map(c => `${c.nombre} cercanos (≤${c.radio} m)`)];
     const cell = v => { if (v == null) return ''; const s = String(v); return /[",\n;]/.test(s) ? '"' + s.replace(/"/g, '""') + '"' : s; };
     const rows = filtered.map(o => { const v = valOf(o.id) || {};
       return [o.id, o.nm, o.fr, o.sem, o.sec, o.fc, o.var, o.nc, o.ha, o.tm, o.tch, o.reg, o.ten, o.mun, o.tc, o.car, o.ubi, o.mul, o.src || 'Sin mapeo',
         o.dE, o.dS, o.dP, o.dkm, o.dkmm, o.dif, o.tmkm, o.q.nR, o.q.rin == null ? '' : Math.round(o.q.rin * 100), o.q.av ? 'Sí' : 'No',
         o.flags.map(f => FLAGS[f] || f).concat(kmFlag(o) ? ['Distancia difiere >15%'] : []).join(' | '),
-        v.r ? (v.pend ? v.r + ' (pendiente de envío)' : v.r) : '', v.n || '', v.u || '', v.t || ''].map(cell).join(','); });
+        v.r ? (v.pend ? v.r + ' (pendiente de envío)' : v.r) : '', v.n || '', v.u || '', v.t || '', ...CSVCAP.map(c => capasCerca(o)[c.id].length)].map(cell).join(','); });
     const blob = new Blob(['\ufeff' + [H.join(','), ...rows].join('\r\n')], {type: 'text/csv;charset=utf-8'});
     const a = document.createElement('a'); a.href = URL.createObjectURL(blob);
     const tag = [F.fr && 'F' + F.fr, F.sem && 'S' + F.sem, F.src, F.flag, F.val].filter(Boolean).join('_');
@@ -994,7 +1105,7 @@ App = (() => {
   function applyPrefs(p) {
     if (!p || prefsDirty) return;                       // si hay cambios locales sin enviar, no se pisan
     PREF_KEYS.forEach(k => { if (k in p) vis[k] = !!p[k]; });
-    LS.set(pkey('prefs'), {...vis}); syncChecks(); if (cur) draw(cur); emit('prefs');
+    LS.set(pkey('prefs'), {...vis}); syncChecks(); redibujar(); emit('prefs');
   }
   async function savePrefs() {
     if (!logged()) return;
@@ -1009,8 +1120,8 @@ App = (() => {
     LS.set(pkey('prefs'), {...vis}); prefsDirty = true; LS.set(pkey('dirty'), true);
     setPState('pend'); clearTimeout(prefTimer); prefTimer = setTimeout(savePrefs, 1200);
   }
-  const PRESETS = {rutas: ['lE', 'lS'], operativa: ['lE', 'lS', 'lME', 'lMS', 'lAV', 'pR'], todo: PREF_KEYS.filter(k => k !== 'ref')};
-  function applyPreset(n) { const on = new Set(PRESETS[n] || []); PREF_KEYS.forEach(k => { if (k !== 'ref') vis[k] = on.has(k); }); }
+  const PRESETS = {rutas: ['lE', 'lS'], operativa: ['lE', 'lS', 'lME', 'lMS', 'lAV', 'pR', 'xpostes', 'xvalvulas', 'xobstaculos', 'xpozos'], todo: PREF_KEYS.filter(k => k !== 'ref' && k !== 'xall')};
+  function applyPreset(n) { const on = new Set(PRESETS[n] || []); PREF_KEYS.forEach(k => { if (k !== 'ref' && k !== 'xall') vis[k] = on.has(k); }); }
 
   async function login(usuario, clave) {
     const j = await api('login', {usuario, clave}, false);
@@ -1128,11 +1239,21 @@ App = (() => {
       <div class="kv"><span>Rajas (dentro del lote)</span><span>${q.nR}${q.rin == null ? '' : ' (' + Math.round(q.rin * 100) + ' %)'}</span><span>Autovolteo</span><span>${q.av ? 'Sí' : 'No'}</span></div>
       ${w.length ? w.map(x => `<div class="warn">${x}</div>`).join('') : (o.src ? '<div class="ok">Mapeo completo: entrada, salida y rajas presentes.</div>' : '')}`;
   }
+  const swatch = c => { const st = c.estilo;
+    return c.tipo === 'p' ? `<span class="dotc" style="background:${st.relleno};border-color:${st.color}"></span>`
+      : c.tipo === 'a' ? `<span class="polc" style="border-color:${st.color};background:${st.relleno || st.color}33"></span>`
+      : `<span class="sw${st.dash ? ' d' : ''}" style="background:${st.color};color:${st.color}"></span>`; };
+  function htmlCapas(o) {
+    const near = capasCerca(o);
+    return `<div class="sec">Capas de apoyo</div><div class="lg">${CAPS.map(c => `<label title="${vis.xall ? 'Modo todo el mapa' : 'A ≤ ' + c.radio + ' m del plantío' + (c.vinculo ? ' o con su código' : '')}"><input type="checkbox" data-v="x${c.id}" ${vis['x' + c.id] ? 'checked' : ''}>${swatch(c)}<span>${esc(c.nombre)}</span><span class="cnt">${vis.xall ? '·' : near[c.id].length}</span></label>`).join('')}</div>
+      <label class="chk"><input type="checkbox" data-v="xall" ${vis.xall ? 'checked' : ''}> Ver capas de todo el mapa (zoom 14+), no solo cerca del plantío</label>`;
+  }
   function htmlLayers(o) {
     const cnt = {}; o.f.forEach(f => { const k = (f.t === 'l' ? 'l' : f.t === 'p' ? 'p' : 'a') + f.c; cnt[k] = (cnt[k] || 0) + 1; });
     return `<div class="presets"><span>Mi vista</span><button type="button" data-preset="rutas">Solo rutas</button><button type="button" data-preset="operativa">Operativa</button><button type="button" data-preset="todo">Todo</button></div>
       <div class="lg">${Object.entries(CAT).map(([k, v]) => `<label><input type="checkbox" data-v="l${k}" ${vis['l' + k] ? 'checked' : ''}><span class="sw${v[3] ? ' d' : ''}" style="background:${v[1]};color:${v[1]}"></span><span>${v[0]}</span><span class="cnt">${cnt['l' + k] || 0}</span></label>`).join('')}
       ${Object.entries(PCAT).map(([k, v]) => `<label><input type="checkbox" data-v="p${k}" ${vis['p' + k] ? 'checked' : ''}><span>${k === 'R' ? '<div class="rmk sm"><i>R</i></div>' : `<div class="${v[1]} sm"></div>`}</span><span>${v[0]}</span><span class="cnt">${cnt['p' + k] || 0}</span></label>`).join('')}</div>
+      ${CAPS.length ? htmlCapas(o) : ''}
       ${o.ref ? `<label class="chk"><input type="checkbox" data-v="ref" ${vis.ref ? 'checked' : ''}> Superponer mapeo 25-26 (punteado)</label>` : ''}
       <div class="pstate" data-s="${prefsDirty ? 'pend' : 'ok'}">${PSTATE[prefsDirty ? 'pend' : 'ok']}</div>`;
   }
@@ -1153,8 +1274,8 @@ App = (() => {
       <div class="vmeta">${esc(metaText())}</div></div>`;
   }
   function bind(root, o) {
-    root.querySelectorAll('input[data-v]').forEach(i => i.onchange = () => { vis[i.dataset.v] = i.checked; draw(o); prefsChanged(); });
-    root.querySelectorAll('button[data-preset]').forEach(b => b.onclick = () => { applyPreset(b.dataset.preset); syncChecks(); draw(o); prefsChanged(); });
+    root.querySelectorAll('input[data-v]').forEach(i => i.onchange = () => { vis[i.dataset.v] = i.checked; redibujar(); prefsChanged(); });
+    root.querySelectorAll('button[data-preset]').forEach(b => b.onclick = () => { applyPreset(b.dataset.preset); syncChecks(); redibujar(); prefsChanged(); });
     const f = root.querySelector('.vform'); if (!f) return;
     let res = null; const send = f.querySelector('.vsend'), det = f.querySelector('.vdet'), nota = f.querySelector('.vnota');
     const upd = () => { send.disabled = !res || (res === 'Diferente' && nota.value.trim().length < 5); };
@@ -1171,7 +1292,7 @@ App = (() => {
   }
 
   return {META: META || {}, D, byId, F, CAT, PCAT, FLAGS, vis, cfg, esc, fmt, init: initMap, select, step, fitLocal, fitAll, applyFilters, options, csv, flush, refreshStatus,
-    saveCfg, locate, on, savePrefs, hasFilters, clearFilters, valOf, valTag, srcTag, htmlKpis, htmlDetail, htmlLayers, htmlForm, bind, kmFlag,
+    saveCfg, locate, on, savePrefs, hasFilters, clearFilters, CAPS, capasCerca, valOf, valTag, srcTag, htmlKpis, htmlDetail, htmlLayers, htmlForm, bind, kmFlag,
     auth: {logged, login, logout, changePassword, get sess() { return sess; }, canSubmit: () => logged() && sess.rol !== 'Consulta'},
     get filtered() { return filtered; }, get cur() { return cur; }, get queueLen() { return queue.length; }, get map() { return map; }};
 })();
@@ -1235,7 +1356,7 @@ UI = (() => {
     $('cfgMsg').textContent = m || '';
     $('cfgWho').innerHTML = s ? `Usuario: <b>${A.esc(s.nombre)}</b> (${A.esc(s.user)}) · Rol: <b>${A.esc(s.rol)}</b>` : 'Sin sesión';
     $('cfgData').value = A.cfg.data || ''; $('cfgGh').value = A.cfg.gh || ''; $('cfgUrl').value = A.cfg.url || '';
-    const x = A.META; $('cfgVer').textContent = x.version ? `Datos versión ${x.version}, generados ${String(x.generado || '').slice(0, 16).replace('T', ' ')} UTC${x.origen ? ' · ' + x.origen : ''}${x.fuentes ? ' · Programa: ' + x.fuentes.programa : ''}` : '';
+    const x = A.META; $('cfgVer').textContent = x.version ? `Datos versión ${x.version}, generados ${String(x.generado || '').slice(0, 16).replace('T', ' ')} UTC${x.origen ? ' · ' + x.origen : ''}${x.fuentes ? ' · Programa: ' + x.fuentes.programa : ''}${x.capas ? ' · Capas de apoyo ' + x.capas.version : ''}` : '';
     $('cfgQ').textContent = A.queueLen ? `${A.queueLen} respuesta(s) pendiente(s) de envío.` : 'Sin respuestas pendientes.';
     dlg.showModal();
   }
@@ -1530,9 +1651,19 @@ dialog input{font-size:16px}
       return new TextDecoder().decode(buf);
     } finally { clearTimeout(to); }
   }
-  async function start(text, meta) {
+  // Capas de apoyo (proyecto QField): archivo aparte, con su propia versión en el manifest. Es opcional y nunca bloquea el arranque.
+  async function loadCapas(meta, forzar) {
+    const cached = await idbGet('capas');
+    if (!meta) return cached ? cached.text : null;            // sin conexión: última copia guardada
+    if (!meta.capas) return null;                             // el repositorio no publica capas
+    if (cached && cached.version === meta.capas.version && !forzar) return cached.text;
+    try { say('Descargando capas de apoyo…', 97); const t = await get('capas.json', meta.capas.version, 120000, 0); JSON.parse(t);
+      await idbPut('capas', {version: meta.capas.version, text: t}); return t; }
+    catch (e) { return cached ? cached.text : null; }
+  }
+  async function start(text, meta, ctext) {
     say('Preparando mapa…', 98);
-    createApp(JSON.parse(text), meta); initUI();
+    createApp(JSON.parse(text), meta, ctext ? JSON.parse(ctext) : null); initUI();
     $('boot').style.display = 'none';
     await UI.ensureLogin();                       // pantalla de ingreso si no hay sesión vigente
     const qs = new URLSearchParams(location.search).get('modo');
@@ -1557,7 +1688,7 @@ dialog input{font-size:16px}
     $('bootFile').onchange = async e => { const f = e.target.files[0]; if (!f) return; const t = await f.text();
       try { JSON.parse(t); } catch { say('El archivo no es un rutas.json válido.'); return; }
       const meta = {version: 'archivo local', generado: new Date(f.lastModified).toISOString(), origen: f.name};
-      await idbPut('datos', {meta, text: t}); start(t, meta); };
+      await idbPut('datos', {meta, text: t}); start(t, meta, null); };
   }
   (async () => {
     let force = false; try { force = sessionStorage.getItem('rp26_force') === '1'; sessionStorage.removeItem('rp26_force'); } catch {}
@@ -1566,15 +1697,15 @@ dialog input{font-size:16px}
     let meta = null, err = null;
     if (cfg.data) { try { meta = JSON.parse(await get('manifest.json', Date.now(), 10000)); } catch (e) { err = e; } }
     if (meta && cached && cached.meta.version === meta.version && !force)
-      return start(cached.text, {...meta, origen: 'caché del navegador (al día con GitHub)'});
+      return start(cached.text, {...meta, origen: 'caché del navegador (al día con GitHub)'}, await loadCapas(meta, force));
     if (meta) {
       try { const t = await get('rutas.json', meta.version, 180000, meta.bytes); JSON.parse(t);
         await idbPut('datos', {meta, text: t});
-        return start(t, {...meta, origen: 'descargado de GitHub', aviso: cached ? `Datos actualizados a la versión ${meta.version}` : ''});
+        return start(t, {...meta, origen: 'descargado de GitHub', aviso: cached ? `Datos actualizados a la versión ${meta.version}` : ''}, await loadCapas(meta, force));
       } catch (e) { err = e; }
     }
     if (cached) return start(cached.text, {...cached.meta, origen: 'caché del navegador (sin conexión)',
-      aviso: `Sin conexión con GitHub: usando datos guardados del ${String(cached.meta.generado || '').slice(0, 10)}`});
+      aviso: `Sin conexión con GitHub: usando datos guardados del ${String(cached.meta.generado || '').slice(0, 10)}`}, await loadCapas(null));
     fail(err);
   })();
 })();

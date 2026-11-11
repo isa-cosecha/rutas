@@ -1,6 +1,6 @@
 {
  "version": "591f07ac6056",
- "generado": "2026-11-11T17:15:13+00:00",
+ "generado": "2026-11-10T16:15:32+00:00",
  "bytes": 4854637,
  "plantios": 1197,
  "indicadores": {
@@ -20,5 +20,36 @@
   "mapeo_actual": "Mapeo_26-27.kml",
   "mapeo_anterior": "Mapeo_Unificado_25-26.kmz",
   "maestro": "Maestro_General_20260901.zip"
+ },
+ "capas": {
+  "version": "ee764734c7f8",
+  "bytes": 1083392,
+  "generado": "2026-11-11T17:26:20+00:00",
+  "capas": {
+   "pozos": 169,
+   "motores": 52,
+   "valvulas": 971,
+   "obstaculos": 3428,
+   "postes": 2343,
+   "rios": 74,
+   "vial": 921,
+   "quemaP": 1215,
+   "quemaAC": 7892,
+   "quemaPV": 655,
+   "aa": 1081
+  },
+  "fuentes": {
+   "pozos": "Pozos.shp",
+   "motores": "Motores Electricos.shp",
+   "valvulas": "Valvulas Goteo.shp",
+   "obstaculos": "Obstaculos_Varios.shp",
+   "postes": "Postes Electricos.shp",
+   "rios": "Rios Occidente.shp",
+   "vial": "Red Vial.shp",
+   "quemaP": "Limites_Quemas_P.shp",
+   "quemaAC": "Limites_Quemas.shp",
+   "quemaPV": "Limites_Quemas_Proveedores.shp",
+   "aa": "Limites_Quemas_Proveedores_AAutorizar.shp"
+  }
  }
 }

@@ -40,7 +40,7 @@ main{position:relative} #map{height:100%}
 <body>
 <aside id="side">
   <header>
-    <div class="hrow"><div><h1>Rutas por plantío</h1><div class="sub">Programa de Corte 2026-2027 · séptimo borrador</div></div>
+    <div class="hrow"><div><h1>Rutas por plantío</h1><div class="sub">Programa de Corte 2026-2027 · séptimo borrador</div><div class="sub" id="who" style="color:var(--amber)"></div></div>
       <button id="gear" aria-label="Configuración">⚙<span class="qn" hidden></span></button></div>
     <input id="q" type="search" placeholder="Código o nombre del plantío" autocomplete="off" aria-label="Buscar plantío">
     <div class="filters">
@@ -102,7 +102,8 @@ document.addEventListener('keydown',e=>{if(/INPUT|SELECT|TEXTAREA/.test(e.target
 $('gear').onclick=()=>UI.openCfg();
 A.applyFilters(); A.flush(); A.refreshStatus();
 const h=location.hash.replace('#p',''); if(A.byId.has(h)) A.select(h);
-if(!A.cfg.user||!A.cfg.url) setTimeout(()=>UI.toast(A.cfg.url?'Escribe tu nombre en ⚙ para enviar respuestas':'Configura tu nombre y la URL de Google Sheets en ⚙ para enviar respuestas'),1200);
+const showWho=()=>{const s=A.auth.sess; $('who').textContent=s?'👤 '+s.nombre+' · '+s.rol:'';};
+showWho(); A.on('login',showWho); A.on('status',showWho);
 </script>
 </body>
 </html>

@@ -1,5 +1,5 @@
 /* Núcleo compartido: datos, mapa, filtros, CSV, Google Sheets (con cola offline) y GPS. */
-const CONFIG = /*__CONFIG__*/{url:'',token:'',data:''};
+const CONFIG = /*__CONFIG__*/{url:'',data:''};
 let App;
 function createApp(RAW, META) {
 App = (() => {
@@ -19,7 +19,8 @@ App = (() => {
   // ---------- almacenamiento local (try/catch: puede no estar disponible) ----------
   const LS = {get(k, d) { try { const v = localStorage.getItem('rp26_' + k); return v == null ? d : JSON.parse(v); } catch { return d; } },
               set(k, v) { try { localStorage.setItem('rp26_' + k, JSON.stringify(v)); } catch {} }};
-  const cfg = Object.assign({url: CONFIG.url, token: CONFIG.token, data: CONFIG.data, gh: '', user: ''}, LS.get('cfg', {}));
+  const cfg = Object.assign({url: CONFIG.url, data: CONFIG.data, gh: ''}, LS.get('cfg', {}));
+  delete cfg.token; delete cfg.user;
   if (!cfg.url) cfg.url = CONFIG.url; if (!cfg.data) cfg.data = CONFIG.data;
   let queue = LS.get('queue', []);           // respuestas pendientes de envío
   let local = LS.get('local', {});           // última respuesta enviada desde este dispositivo
@@ -132,48 +133,117 @@ App = (() => {
     emit('toast', `CSV descargado: ${filtered.length} plantíos`);
   }
 
-  // ---------- Google Sheets ----------
+  // ---------- sesión: usuarios guardados en Google Sheets ----------
   const uuid = () => (crypto.randomUUID ? crypto.randomUUID() : 'id-' + Date.now() + '-' + Math.random().toString(16).slice(2));
-  async function post(items) {
-    const body = JSON.stringify({token: cfg.token, items});
-    try { const r = await fetch(cfg.url, {method: 'POST', body}); const j = await r.json(); if (!j.ok) throw new Error(j.error || 'rechazado'); return j.accepted || items.map(i => i.id); }
-    catch (e) {
-      if (e instanceof TypeError && navigator.onLine !== false) { await fetch(cfg.url, {method: 'POST', mode: 'no-cors', body}); return items.map(i => i.id); }
-      throw e;
-    }
+  let sess = LS.get('sess', null);                     // {token, exp, user, nombre, rol}
+  if (sess && !(sess.token && sess.exp > Date.now())) sess = null;
+  const logged = () => !!(sess && sess.token && sess.exp > Date.now());
+  const setSess = x => { sess = x; LS.set('sess', x); };
+  async function api(action, body = {}, authed = true) {
+    if (!cfg.url) return {ok: false, error: 'Falta configurar la URL del servidor de usuarios (Apps Script).'};
+    const payload = {action, ...body}; if (authed && sess) payload.token = sess.token;
+    const ctl = new AbortController(), t = setTimeout(() => ctl.abort(), 30000);
+    try {
+      const r = await fetch(cfg.url, {method: 'POST', body: JSON.stringify(payload), signal: ctl.signal});
+      const j = await r.json();
+      if (j && j.code === 'sesion' && authed) { setSess(null); emit('logout', j.error); }
+      return j;
+    } finally { clearTimeout(t); }
   }
+
+  // ---------- capas del mapa: configuración personal del usuario ----------
+  const PREF_KEYS = Object.keys(vis);
+  const pkey = k => 'u_' + (sess ? sess.user : '_') + '_' + k;
+  let prefsDirty = false, prefTimer = null;
+  const PSTATE = {ok: 'Tu vista se guarda en tu perfil y aplica a todos los plantíos.', pend: 'Guardando tu vista…',
+    off: 'Sin conexión: tu vista se guardará al reconectar.', err: 'No se pudo guardar tu vista.'};
+  const setPState = st => { document.querySelectorAll('.pstate').forEach(el => { el.dataset.s = st; el.textContent = PSTATE[st]; }); };
+  const syncChecks = () => document.querySelectorAll('input[data-v]').forEach(i => { i.checked = !!vis[i.dataset.v]; });
+  function loadPrefsLocal() {
+    const p = LS.get(pkey('prefs'), null); if (p) PREF_KEYS.forEach(k => { if (k in p) vis[k] = !!p[k]; });
+    prefsDirty = LS.get(pkey('dirty'), false);
+  }
+  loadPrefsLocal();
+  function applyPrefs(p) {
+    if (!p || prefsDirty) return;                       // si hay cambios locales sin enviar, no se pisan
+    PREF_KEYS.forEach(k => { if (k in p) vis[k] = !!p[k]; });
+    LS.set(pkey('prefs'), {...vis}); syncChecks(); if (cur) draw(cur); emit('prefs');
+  }
+  async function savePrefs() {
+    if (!logged()) return;
+    const snap = JSON.stringify(vis);
+    try {
+      const j = await api('prefs_set', {prefs: {...vis}});
+      if (j.ok) { if (JSON.stringify(vis) === snap) { prefsDirty = false; LS.set(pkey('dirty'), false); setPState('ok'); } }
+      else if (j.code !== 'sesion') setPState('err');
+    } catch { setPState('off'); }
+  }
+  function prefsChanged() {
+    LS.set(pkey('prefs'), {...vis}); prefsDirty = true; LS.set(pkey('dirty'), true);
+    setPState('pend'); clearTimeout(prefTimer); prefTimer = setTimeout(savePrefs, 1200);
+  }
+  const PRESETS = {rutas: ['lE', 'lS'], operativa: ['lE', 'lS', 'lME', 'lMS', 'lAV', 'pR'], todo: PREF_KEYS.filter(k => k !== 'ref')};
+  function applyPreset(n) { const on = new Set(PRESETS[n] || []); PREF_KEYS.forEach(k => { if (k !== 'ref') vis[k] = on.has(k); }); }
+
+  async function login(usuario, clave) {
+    const j = await api('login', {usuario, clave}, false);
+    if (!j.ok || j.cambiar) return j;
+    setSess({token: j.token, exp: j.exp, user: j.usuario, nombre: j.nombre, rol: j.rol});
+    loadPrefsLocal(); applyPrefs(j.prefs);
+    emit('login', sess); flush(); refreshStatus();
+    return j;
+  }
+  const changePassword = (usuario, actual, nueva) => api('cambiar_clave', {usuario, actual, nueva}, false);
+  function logout() { clearTimeout(prefTimer); if (prefsDirty) savePrefs(); setSess(null); emit('logout', ''); }
+
+  // ---------- respuestas en Google Sheets (cola sin conexión, ligada al usuario) ----------
+  const metaText = () => 'Responde: ' + (sess ? sess.nombre + ' (' + sess.rol + ')' : '—') + (queue.length ? ' · ' + queue.length + ' pendiente(s) de envío' : '');
   let flushing = false;
   async function flush() {
-    if (flushing || !queue.length || !cfg.url) { emit('queue', queue.length); return; }
+    const mine = logged() ? queue.filter(r => r.uid === sess.user) : [];
+    if (logged() && prefsDirty && !prefTimer) savePrefs();
+    if (flushing || !mine.length) { emit('queue', queue.length); return; }
     flushing = true;
-    try { const ok = new Set(await post(queue));
-      queue.filter(r => ok.has(r.id)).forEach(r => local[r.codigo] = {r: r.resultado, n: r.nota, u: r.usuario, t: r.ts});
-      queue = queue.filter(r => !ok.has(r.id)); LS.set('queue', queue); LS.set('local', local);
-      if (ok.size) { emit('toast', `${ok.size} respuesta(s) enviadas a Google Sheets`); emit('status');
-        if (cur) document.querySelectorAll('.vform .vmeta').forEach(el => el.textContent = 'Responde: ' + cfg.user + (queue.length ? ' · ' + queue.length + ' pendiente(s) de envío' : ''));
-        if (cur) document.querySelectorAll('.vform .vlast').forEach(el => { const v = valOf(cur.id); el.innerHTML = `${valTag(v)} ${esc(v.u || '')} ${v.t ? esc(String(v.t).slice(0, 16).replace('T', ' ')) : ''}${v.n ? `<div class="vnote">“${esc(v.n)}”</div>` : ''}`; }); }
+    try {
+      const j = await api('submit', {items: mine});
+      if (j.ok) {
+        const ok = new Set(j.accepted || []);
+        mine.filter(r => ok.has(r.id)).forEach(r => local[r.codigo] = {r: r.resultado, n: r.nota, u: r.usuario, t: r.ts});
+        queue = queue.filter(r => !ok.has(r.id)); LS.set('queue', queue); LS.set('local', local);
+        if (ok.size) { emit('toast', `${ok.size} respuesta(s) enviadas a Google Sheets`); emit('status');
+          if (cur) document.querySelectorAll('.vform .vmeta').forEach(el => el.textContent = metaText());
+          if (cur) document.querySelectorAll('.vform .vlast').forEach(el => { const v = valOf(cur.id); el.innerHTML = `${valTag(v)} ${esc(v.u || '')} ${v.t ? esc(String(v.t).slice(0, 16).replace('T', ' ')) : ''}${v.n ? `<div class="vnote">“${esc(v.n)}”</div>` : ''}`; }); }
+      } else if (j.code !== 'sesion') emit('toast', j.error || 'El servidor rechazó el envío');
     } catch (e) { emit('toast', 'Sin conexión con Google Sheets: las respuestas quedan guardadas para reenvío'); }
     finally { flushing = false; emit('queue', queue.length); }
   }
   async function refreshStatus() {
-    if (!cfg.url) return;
-    try { const r = await fetch(cfg.url + (cfg.url.includes('?') ? '&' : '?') + 'token=' + encodeURIComponent(cfg.token || '')); const j = await r.json();
-      if (j.ok) { remote = {}; Object.entries(j.status || {}).forEach(([k, v]) => remote[String(k).padStart(5, '0')] = v); emit('status'); } } catch {}
+    if (!cfg.url || !logged()) return;
+    try {
+      const j = await api('sync');
+      if (j.ok) {
+        remote = {}; Object.entries(j.status || {}).forEach(([k, v]) => remote[String(k).padStart(5, '0')] = v);
+        if (j.rol && (sess.rol !== j.rol || sess.nombre !== j.nombre)) setSess({...sess, rol: j.rol, nombre: j.nombre});
+        applyPrefs(j.prefs); emit('status');
+      }
+    } catch {}
   }
   function submit(o, resultado, aspectos, nota, fechaReal, withPos) {
-    if (!cfg.user) { emit('needConfig', 'Escribe tu nombre antes de enviar respuestas.'); return false; }
+    if (!logged()) { emit('needLogin'); return false; }
+    if (sess.rol === 'Consulta') { emit('toast', 'Tu rol es de consulta: no puede registrar respuestas.'); return false; }
     if (resultado === 'Diferente' && nota.trim().length < 5) { emit('toast', 'Agrega la nota de por qué se trabajó diferente.'); return false; }
     const p = withPos && lastPos ? lastPos : null;
     queue.push({id: uuid(), ts: new Date().toISOString(), codigo: o.id, nombre: o.nm, frente: o.fr, semana: o.sem, secuencia: o.sec, fecha_plan: o.fc,
-      fecha_real: fechaReal || '', resultado, aspectos: resultado === 'Diferente' ? aspectos.join(', ') : '', nota: nota.trim(), usuario: cfg.user,
+      fecha_real: fechaReal || '', resultado, aspectos: resultado === 'Diferente' ? aspectos.join(', ') : '', nota: nota.trim(),
+      usuario: sess.nombre, uid: sess.user,
       lat: p ? +p.lat.toFixed(6) : '', lon: p ? +p.lng.toFixed(6) : '', prec: p ? Math.round(p.acc) : '', mapeo: o.src || 'Sin mapeo',
       origen: document.documentElement.dataset.ui || 'web'});
     LS.set('queue', queue); emit('queue', queue.length); emit('status');
-    if (!cfg.url) emit('toast', 'Respuesta guardada. Configura la URL de Google Sheets para enviarla.'); else flush();
+    flush();
     return true;
   }
   function saveCfg(c) { Object.assign(cfg, c); LS.set('cfg', cfg); flush(); refreshStatus(); }
-  addEventListener('online', flush);
+  addEventListener('online', () => { flush(); refreshStatus(); });
   setInterval(() => { flush(); }, 60000);
 
   // ---------- GPS ----------
@@ -233,12 +303,15 @@ App = (() => {
   }
   function htmlLayers(o) {
     const cnt = {}; o.f.forEach(f => { const k = (f.t === 'l' ? 'l' : f.t === 'p' ? 'p' : 'a') + f.c; cnt[k] = (cnt[k] || 0) + 1; });
-    return `<div class="lg">${Object.entries(CAT).map(([k, v]) => `<label><input type="checkbox" data-v="l${k}" ${vis['l' + k] ? 'checked' : ''}><span class="sw${v[3] ? ' d' : ''}" style="background:${v[1]};color:${v[1]}"></span><span>${v[0]}</span><span class="cnt">${cnt['l' + k] || 0}</span></label>`).join('')}
+    return `<div class="presets"><span>Mi vista</span><button type="button" data-preset="rutas">Solo rutas</button><button type="button" data-preset="operativa">Operativa</button><button type="button" data-preset="todo">Todo</button></div>
+      <div class="lg">${Object.entries(CAT).map(([k, v]) => `<label><input type="checkbox" data-v="l${k}" ${vis['l' + k] ? 'checked' : ''}><span class="sw${v[3] ? ' d' : ''}" style="background:${v[1]};color:${v[1]}"></span><span>${v[0]}</span><span class="cnt">${cnt['l' + k] || 0}</span></label>`).join('')}
       ${Object.entries(PCAT).map(([k, v]) => `<label><input type="checkbox" data-v="p${k}" ${vis['p' + k] ? 'checked' : ''}><span>${k === 'R' ? '<div class="rmk sm"><i>R</i></div>' : `<div class="${v[1]} sm"></div>`}</span><span>${v[0]}</span><span class="cnt">${cnt['p' + k] || 0}</span></label>`).join('')}</div>
-      ${o.ref ? `<label class="chk"><input type="checkbox" data-v="ref" ${vis.ref ? 'checked' : ''}> Superponer mapeo 25-26 (punteado)</label>` : ''}`;
+      ${o.ref ? `<label class="chk"><input type="checkbox" data-v="ref" ${vis.ref ? 'checked' : ''}> Superponer mapeo 25-26 (punteado)</label>` : ''}
+      <div class="pstate" data-s="${prefsDirty ? 'pend' : 'ok'}">${PSTATE[prefsDirty ? 'pend' : 'ok']}</div>`;
   }
   function htmlForm(o) {
     const v = valOf(o.id), today = new Date().toISOString().slice(0, 10);
+    if (sess && sess.rol === 'Consulta') return `<div class="vlast">${v ? `${valTag(v)} ${esc(v.u || '')} ${v.t ? esc(String(v.t).slice(0, 16).replace('T', ' ')) : ''}${v.n ? `<div class="vnote">“${esc(v.n)}”</div>` : ''}` : 'Sin respuesta registrada.'}</div><div class="ok">Tu rol es de consulta: puedes ver rutas y estados, pero no registrar respuestas.</div>`;
     return `<div class="vform">
       ${v ? `<div class="vlast">${valTag(v)} ${esc(v.u || '')} ${v.t ? esc(String(v.t).slice(0, 16).replace('T', ' ')) : ''}${v.n ? `<div class="vnote">“${esc(v.n)}”</div>` : ''}</div>` : ''}
       <div class="vbtns"><button type="button" class="vb vok" data-r="Según lo planificado">Se trabajó según lo planificado</button>
@@ -250,10 +323,11 @@ App = (() => {
       <div class="vrow"><label>Fecha de trabajo <input type="date" class="vfecha" value="${today}"></label>
         <label class="chk"><input type="checkbox" class="vpos" ${L.Browser.mobile ? 'checked' : ''}> Adjuntar mi ubicación GPS</label></div>
       <button type="button" class="vsend primary" disabled>Enviar a Google Sheets</button>
-      <div class="vmeta">${cfg.user ? 'Responde: ' + esc(cfg.user) : 'Configura tu nombre en ⚙'}${queue.length ? ' · ' + queue.length + ' pendiente(s) de envío' : ''}</div></div>`;
+      <div class="vmeta">${esc(metaText())}</div></div>`;
   }
   function bind(root, o) {
-    root.querySelectorAll('input[data-v]').forEach(i => i.onchange = () => { vis[i.dataset.v] = i.checked; draw(o); });
+    root.querySelectorAll('input[data-v]').forEach(i => i.onchange = () => { vis[i.dataset.v] = i.checked; draw(o); prefsChanged(); });
+    root.querySelectorAll('button[data-preset]').forEach(b => b.onclick = () => { applyPreset(b.dataset.preset); syncChecks(); draw(o); prefsChanged(); });
     const f = root.querySelector('.vform'); if (!f) return;
     let res = null; const send = f.querySelector('.vsend'), det = f.querySelector('.vdet'), nota = f.querySelector('.vnota');
     const upd = () => { send.disabled = !res || (res === 'Diferente' && nota.value.trim().length < 5); };
@@ -270,7 +344,8 @@ App = (() => {
   }
 
   return {META: META || {}, D, byId, F, CAT, PCAT, FLAGS, vis, cfg, esc, fmt, init: initMap, select, step, fitLocal, fitAll, applyFilters, options, csv, flush, refreshStatus,
-    saveCfg, locate, on, valOf, valTag, srcTag, htmlKpis, htmlDetail, htmlLayers, htmlForm, bind, kmFlag,
+    saveCfg, locate, on, savePrefs, valOf, valTag, srcTag, htmlKpis, htmlDetail, htmlLayers, htmlForm, bind, kmFlag,
+    auth: {logged, login, logout, changePassword, get sess() { return sess; }, canSubmit: () => logged() && sess.rol !== 'Consulta'},
     get filtered() { return filtered; }, get cur() { return cur; }, get queueLen() { return queue.length; }, get map() { return map; }};
 })();
 return App;

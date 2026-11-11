@@ -55,3 +55,21 @@ dialog h3{font:700 19px var(--f-head);margin:0 0 10px}
 dialog label{display:grid;gap:4px;margin:10px 0;font-size:13px;color:var(--mute)}
 dialog .row{display:flex;gap:8px;justify-content:flex-end;margin-top:14px}
 @media (prefers-reduced-motion:reduce){*{transition:none!important}}
+/* ---- ingreso de usuarios ---- */
+#login{position:fixed;inset:0;z-index:6000;background:var(--panel);display:grid;place-items:center;padding:24px;overflow:auto}
+#login[hidden]{display:none}
+.lgbox{width:min(380px,100%)}
+.lgbox h2{font:700 28px var(--f-head);margin:0}
+.lgsub{color:var(--mute);margin-bottom:14px}
+.lgbox label{display:grid;gap:4px;margin:12px 0;font-size:13px;color:var(--mute)}
+.lgbox input{font-size:16px;padding:11px 12px}
+.lgbox .primary{width:100%;padding:12px;font-size:16px;margin-top:6px}
+.lgnote{background:var(--field);border-left:3px solid var(--amber);padding:8px 10px;font-size:13px;border-radius:3px}
+#lgMsg{color:#ff9a8c;font-size:13.5px;min-height:20px;margin-top:6px}
+.who{font-size:14px;margin:4px 0}
+dialog details{margin:10px 0;font-size:13px} dialog summary{cursor:pointer;color:var(--mute)}
+/* ---- capas guardadas en el perfil ---- */
+.presets{display:flex;gap:6px;align-items:center;flex-wrap:wrap;margin-bottom:8px;font-size:12.5px;color:var(--mute)}
+.presets button{padding:4px 10px;font-size:13px}
+.pstate{font-size:12px;color:var(--mute);margin-top:8px}
+.pstate[data-s=pend]{color:var(--amber)} .pstate[data-s=err],.pstate[data-s=off]{color:#ff9a8c}

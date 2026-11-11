@@ -11,6 +11,7 @@ Visor de rutas de entrada y salida, muleo, autovolteo y puntos de raja por plant
 | `docs/` | `lanzador.html` (archivo local), `index.html` (visor completo sin datos) y `visor.json` (versión del visor) | GitHub Actions |
 | `scripts/` | Procesamiento en Python | — |
 | `visor_src/` | Código fuente del visor; `config.json` guarda la URL de Apps Script | Solo si cambias el visor |
+| `apps_script/` | `Codigo.gs` (servidor de usuarios, capas y respuestas) y `harness.js` (pruebas) | Solo si cambias el servidor |
 
 ## Actualizar el mapeo o el programa
 
@@ -41,3 +42,17 @@ pip install -r scripts/requirements.txt
 python scripts/exportar_datos.py fuentes data
 python scripts/construir_visor.py --repo USUARIO/REPO   # genera docs/index.html, visor.json y lanzador.html
 ```
+
+## Usuarios, roles y capas por usuario (Google Sheets)
+
+El script `apps_script/Codigo.gs` administra tres hojas del Google Sheets:
+
+| Hoja | Contenido |
+|---|---|
+| `Usuarios` | Usuario, nombre, rol, activo, clave (solo sal y hash). Se administra desde el menú **Rutas** de la hoja |
+| `Configuración` | Una fila por usuario con las capas del mapa que quiere ver (Sí / No). Se puede editar a mano |
+| `Respuestas` | Validaciones de campo. Usuario, nombre y rol los pone el servidor según la sesión |
+
+Roles: **Administrador** y **Supervisor** registran respuestas; **Consulta** solo ve. Para dar de baja a alguien, cambia *Activo* a `No` y su sesión se cierra de inmediato.
+
+Ejecutar las pruebas del servidor: `node apps_script/harness.js test`.

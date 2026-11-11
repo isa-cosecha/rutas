@@ -132,7 +132,6 @@ $('bLoc').onclick=()=>A.locate(); $('bFit').onclick=()=>A.cur?A.fitLocal():A.loc
 $('gear').onclick=()=>UI.openCfg();
 A.applyFilters(); A.flush(); A.refreshStatus();
 const h=location.hash.replace('#p',''); if(A.byId.has(h)) A.select(h);
-if(!A.cfg.user||!A.cfg.url) setTimeout(()=>UI.openCfg(A.cfg.url?'Antes de empezar: escribe tu nombre.':'Antes de empezar: escribe tu nombre y pega la URL del Web App de Google Sheets.'),900);
 </script>
 </body>
 </html>

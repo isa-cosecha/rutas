@@ -16,6 +16,7 @@ ap.add_argument('--repo', help='usuario/repositorio en GitHub')
 ap.add_argument('--rama', default='main')
 ap.add_argument('--datos', help='URL base de la carpeta data/ (anula --repo)')
 ap.add_argument('--salida', default=os.path.join(ROOT, 'docs', 'index.html'))
+ap.add_argument('--sheets', help='URL del Web App de Apps Script (anula visor_src/config.json)')
 ap.add_argument('--base', help='URL base del repositorio para el lanzador (carpetas docs/ y data/ cuelgan de ahí)')
 a = ap.parse_args()
 cfg = json.load(open(S('config.json'), encoding='utf-8'))
@@ -30,8 +31,8 @@ fonts = '\n'.join(
     f"src:url(data:font/woff2;base64,{b64(S('vendor', 'fonts', f'{slug}-latin-{w}-normal.woff2'))}) format('woff2')}}"
     for fam, slug, ws in (('Barlow', 'barlow', (400, 500, 600)), ('Barlow Semi Condensed', 'barlow-semi-condensed', (500, 600, 700)))
     for w in ws)
-config_js = json.dumps({'url': cfg.get('sheets_url', ''), 'token': cfg.get('sheets_token', ''), 'data': datos}, ensure_ascii=False)
-core = rd(S('core.js')).replace("/*__CONFIG__*/{url:'',token:'',data:''}", config_js)
+config_js = json.dumps({'url': a.sheets or cfg.get('sheets_url', ''), 'data': datos}, ensure_ascii=False)
+core = rd(S('core.js')).replace("/*__CONFIG__*/{url:'',data:''}", config_js)
 assert config_js in core, 'No se encontró el marcador CONFIG en core.js'
 
 def parts(name):
@@ -74,9 +75,11 @@ BOOT = r'''
       return new TextDecoder().decode(buf);
     } finally { clearTimeout(to); }
   }
-  function start(text, meta) {
+  async function start(text, meta) {
     say('Preparando mapa…', 98);
     createApp(JSON.parse(text), meta); initUI();
+    $('boot').style.display = 'none';
+    await UI.ensureLogin();                       // pantalla de ingreso si no hay sesión vigente
     const qs = new URLSearchParams(location.search).get('modo');
     let pref = null; try { pref = localStorage.getItem('rp26_modo'); } catch {}
     const auto = (matchMedia('(max-width: 820px)').matches || (matchMedia('(pointer: coarse)').matches && innerWidth < 1100)) ? 'movil' : 'web';

@@ -116,7 +116,8 @@
         "color": "#232323",
         "relleno": "#4787e7",
         "r": 5,
-        "peso": 1.2
+        "peso": 1.2,
+        "icono": "valvula"
       },
       "titulo": "obstaculo",
       "popup": [
@@ -229,7 +230,8 @@
         "color": "#000000",
         "relleno": "#fbe625",
         "r": 5,
-        "peso": 1.2
+        "peso": 1.2,
+        "icono": "poste"
       },
       "titulo": "name",
       "popup": [

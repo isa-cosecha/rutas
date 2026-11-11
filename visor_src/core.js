@@ -1,5 +1,36 @@
 /* Núcleo compartido: datos, mapa, filtros, CSV, Google Sheets (con cola offline) y GPS. */
 const CONFIG = /*__CONFIG__*/{url:'',data:''};
+/* Íconos de las capas de apoyo: réplica de los "Marcador SVG" del proyecto QGIS (válvula = cruz azul con rombo; poste = torre de alta tensión),
+ * con halo blanco para que se vean sobre la imagen satelital. */
+const SVG_VALVULA = '<svg xmlns="http://www.w3.org/2000/svg" width="64" height="64" viewBox="0 0 64 64">'
+  + '<g fill="none" stroke-linecap="round"><path d="M32 3V61M3 32H61" stroke="#fff" stroke-width="10" opacity=".9"/><path d="M32 5V59M5 32H59" stroke="#3a6fc0" stroke-width="4.6"/></g>'
+  + '<path d="M32 18 46 32 32 46 18 32Z" fill="#4a90e8" stroke="#fff" stroke-width="6" stroke-linejoin="round" paint-order="stroke"/>'
+  + '<path d="M32 18 46 32 32 46 18 32Z" fill="#4a90e8" stroke="#2457a8" stroke-width="2.2" stroke-linejoin="round"/></svg>';
+const SVG_POSTE = '<svg xmlns="http://www.w3.org/2000/svg" width="64" height="64" viewBox="0 0 64 64">'
+  + '<g fill="none" stroke-linecap="round" stroke-linejoin="round">'
+  // halo
+  + '<g stroke="#fff" opacity=".9"><path d="M32 6 14 58M32 6 50 58" stroke-width="11"/><path d="M3 14Q13 11 29 14M3 21Q13 18 29 21M3 28Q13 25 29 28M35 14Q51 11 61 14M35 21Q51 18 61 21M35 28Q51 25 61 28" stroke-width="5.4"/></g>'
+  // cables
+  + '<g stroke="#8c7a1c" stroke-width="2.6"><path d="M3 14Q13 11 29 14M3 21Q13 18 29 21M3 28Q13 25 29 28M35 14Q51 11 61 14M35 21Q51 18 61 21M35 28Q51 25 61 28"/></g>'
+  // torre: contorno oliva + relleno amarillo + celosía
+  + '<path d="M32 6 14 58M32 6 50 58" stroke="#8c7a1c" stroke-width="9"/><path d="M32 6 14 58M32 6 50 58" stroke="#f2cf1d" stroke-width="5"/>'
+  + '<g stroke="#8c7a1c" stroke-width="2.4"><path d="M25 26H39M21 40H43M17.5 52H46.5M25 26 43 40M39 26 21 40M21 40 46.5 52M43 40 17.5 52"/></g></g></svg>';
+
+const ICONOS = {valvula: {svg: SVG_VALVULA, size: 22}, poste: {svg: SVG_POSTE, size: 28}};
+const ICONO_DE_CAPA = {valvulas: 'valvula', postes: 'poste'};   // si la capa no declara estilo.icono en capas.json
+/* Marcador que dibuja una imagen sobre el lienzo de Leaflet (rápido con miles de entidades). Su tamaño sigue el zoom. */
+if (typeof L !== 'undefined' && !L.IconMarker) {
+  L.IconMarker = L.CircleMarker.extend({
+    options: {img: null, size: 24, fill: false, stroke: false},
+    _escala() { const z = this._map ? this._map.getZoom() : 18; return z >= 18 ? 1 : z >= 17 ? .9 : z >= 16 ? .72 : z >= 15 ? .56 : z >= 14 ? .46 : .4; },
+    _project() { this._radius = this.options.size * this._escala() / 2; L.CircleMarker.prototype._project.call(this); },
+    _updatePath() {
+      const img = this.options.img, c = this._renderer && this._renderer._ctx;
+      if (!c || !img || !img.complete || !img.naturalWidth) return;
+      const s = this._radius * 2, p = this._point; c.drawImage(img, p.x - s / 2, p.y - s / 2, s, s);
+    }
+  });
+}
 let App;
 function createApp(RAW, META, CAPAS) {
 App = (() => {
@@ -123,9 +154,21 @@ App = (() => {
     const row = c.A[c.r[i]], g = j => (row[j] >= 0 ? c.S[row[j]] : null), t = c.titulo >= 0 ? g(c.titulo) : null;
     return `<b>${esc(c.nombre)}</b>${t ? ' · ' + esc(t) : ''}<br>` + c.popup.map((lab, j) => (j === c.titulo || g(j) == null) ? '' : `<span style="color:#6b7a70">${esc(lab)}:</span> ${esc(g(j))}`).filter(Boolean).join('<br>');
   }
+  const iconoCache = {};
+  function icono(nombre) {
+    if (!nombre || !ICONOS[nombre]) return null;
+    if (!iconoCache[nombre]) {
+      const img = new Image(), src = 'data:image/svg+xml;charset=utf-8,' + encodeURIComponent(ICONOS[nombre].svg);
+      img.onload = () => { if (map) map.eachLayer(l => { if (l instanceof L.IconMarker) l.redraw(); }); };   // si el ícono termina de cargar tarde
+      img.src = src; iconoCache[nombre] = {img, src, size: ICONOS[nombre].size};
+    }
+    return iconoCache[nombre];
+  }
+  const iconoDe = c => icono(c.estilo.icono || ICONO_DE_CAPA[c.id]);
   function capaAdd(c, i, grp) {
-    const st = c.estilo, col = capaColor(c, c.r[i]), dash = st.dash || null;
-    if (c.tipo === 'p') grp.addLayer(L.circleMarker([c._lat[i], c._lon[i]], {radius: st.r, color: st.color, weight: st.peso, fillColor: col || st.relleno, fillOpacity: .95}).bindPopup(() => capaPopup(c, i)));
+    const st = c.estilo, col = capaColor(c, c.r[i]), dash = st.dash || null, ic = c.tipo === 'p' ? iconoDe(c) : null;
+    if (ic) grp.addLayer(new L.IconMarker([c._lat[i], c._lon[i]], {img: ic.img, size: ic.size, radius: ic.size / 2}).bindPopup(() => capaPopup(c, i)));
+    else if (c.tipo === 'p') grp.addLayer(L.circleMarker([c._lat[i], c._lon[i]], {radius: st.r, color: st.color, weight: st.peso, fillColor: col || st.relleno, fillOpacity: .95}).bindPopup(() => capaPopup(c, i)));
     else if (c.tipo === 'l') grp.addLayer(L.polyline(c._ln[i], {color: col || st.color, weight: st.peso, dashArray: dash, opacity: .9}).bindPopup(() => capaPopup(c, i)));
     else {   // polígono: el relleno no es interactivo (no debe tapar los clics de los plantíos); el borde sí muestra datos
       grp.addLayer(L.polygon(c._ln[i], {stroke: false, fillColor: st.relleno || st.color, fillOpacity: st.opacidad ?? .1, interactive: false}));
@@ -423,23 +466,30 @@ App = (() => {
       <div class="kv"><span>Rajas (dentro del lote)</span><span>${q.nR}${q.rin == null ? '' : ' (' + Math.round(q.rin * 100) + ' %)'}</span><span>Autovolteo</span><span>${q.av ? 'Sí' : 'No'}</span></div>
       ${w.length ? w.map(x => `<div class="warn">${x}</div>`).join('') : (o.src ? '<div class="ok">Mapeo completo: entrada, salida y rajas presentes.</div>' : '')}`;
   }
-  const swatch = c => { const st = c.estilo;
-    return c.tipo === 'p' ? `<span class="dotc" style="background:${st.relleno};border-color:${st.color}"></span>`
+  const swatch = c => { const st = c.estilo, ic = c.tipo === 'p' ? iconoDe(c) : null;
+    return ic ? `<img class="icoc" src="${ic.src}" alt="">` : c.tipo === 'p' ? `<span class="dotc" style="background:${st.relleno};border-color:${st.color}"></span>`
       : c.tipo === 'a' ? `<span class="polc" style="border-color:${st.color};background:${st.relleno || st.color}33"></span>`
       : `<span class="sw${st.dash ? ' d' : ''}" style="background:${st.color};color:${st.color}"></span>`; };
   function htmlCapas(o) {
-    const near = capasCerca(o);
-    return `<div class="sec">Capas de apoyo</div><div class="lg">${CAPS.map(c => `<label title="${vis.xall ? 'Modo todo el mapa' : 'A ≤ ' + c.radio + ' m del plantío' + (c.vinculo ? ' o con su código' : '')}"><input type="checkbox" data-v="x${c.id}" ${vis['x' + c.id] ? 'checked' : ''}>${swatch(c)}<span>${esc(c.nombre)}</span><span class="cnt">${vis.xall ? '·' : near[c.id].length}</span></label>`).join('')}</div>
+    const near = o ? capasCerca(o) : null;
+    return `<div class="sec">Capas de apoyo</div><div class="lg">${CAPS.map(c => `<label title="${vis.xall ? 'Modo todo el mapa' : 'A ≤ ' + c.radio + ' m del plantío' + (c.vinculo ? ' o con su código' : '')}"><input type="checkbox" data-v="x${c.id}" ${vis['x' + c.id] ? 'checked' : ''}>${swatch(c)}<span>${esc(c.nombre)}</span><span class="cnt">${!o || vis.xall ? '·' : near[c.id].length}</span></label>`).join('')}</div>
       <label class="chk"><input type="checkbox" data-v="xall" ${vis.xall ? 'checked' : ''}> Ver capas de todo el mapa (zoom 14+), no solo cerca del plantío</label>`;
   }
-  function htmlLayers(o) {
-    const cnt = {}; o.f.forEach(f => { const k = (f.t === 'l' ? 'l' : f.t === 'p' ? 'p' : 'a') + f.c; cnt[k] = (cnt[k] || 0) + 1; });
+  /** Panel de configuración de capas (independiente de la ficha del plantío). Los conteos son del plantío seleccionado. */
+  function htmlPanelCapas() {
+    const o = cur, cnt = {}; if (o) o.f.forEach(f => { const k = (f.t === 'l' ? 'l' : f.t === 'p' ? 'p' : 'a') + f.c; cnt[k] = (cnt[k] || 0) + 1; });
+    const num = k => o ? (cnt[k] || 0) : '·';
     return `<div class="presets"><span>Mi vista</span><button type="button" data-preset="rutas">Solo rutas</button><button type="button" data-preset="operativa">Operativa</button><button type="button" data-preset="todo">Todo</button></div>
-      <div class="lg">${Object.entries(CAT).map(([k, v]) => `<label><input type="checkbox" data-v="l${k}" ${vis['l' + k] ? 'checked' : ''}><span class="sw${v[3] ? ' d' : ''}" style="background:${v[1]};color:${v[1]}"></span><span>${v[0]}</span><span class="cnt">${cnt['l' + k] || 0}</span></label>`).join('')}
-      ${Object.entries(PCAT).map(([k, v]) => `<label><input type="checkbox" data-v="p${k}" ${vis['p' + k] ? 'checked' : ''}><span>${k === 'R' ? '<div class="rmk sm"><i>R</i></div>' : `<div class="${v[1]} sm"></div>`}</span><span>${v[0]}</span><span class="cnt">${cnt['p' + k] || 0}</span></label>`).join('')}</div>
+      <div class="sec">Rutas y puntos del plantío</div>
+      <div class="lg">${Object.entries(CAT).map(([k, v]) => `<label><input type="checkbox" data-v="l${k}" ${vis['l' + k] ? 'checked' : ''}><span class="sw${v[3] ? ' d' : ''}" style="background:${v[1]};color:${v[1]}"></span><span>${v[0]}</span><span class="cnt">${num('l' + k)}</span></label>`).join('')}
+      ${Object.entries(PCAT).map(([k, v]) => `<label><input type="checkbox" data-v="p${k}" ${vis['p' + k] ? 'checked' : ''}><span>${k === 'R' ? '<div class="rmk sm"><i>R</i></div>' : `<div class="${v[1]} sm"></div>`}</span><span>${v[0]}</span><span class="cnt">${num('p' + k)}</span></label>`).join('')}</div>
+      <label class="chk"><input type="checkbox" data-v="ref" ${vis.ref ? 'checked' : ''}> Superponer mapeo 25-26 (punteado)</label>
       ${CAPS.length ? htmlCapas(o) : ''}
-      ${o.ref ? `<label class="chk"><input type="checkbox" data-v="ref" ${vis.ref ? 'checked' : ''}> Superponer mapeo 25-26 (punteado)</label>` : ''}
       <div class="pstate" data-s="${prefsDirty ? 'pend' : 'ok'}">${PSTATE[prefsDirty ? 'pend' : 'ok']}</div>`;
+  }
+  function bindCapas(root) {
+    root.querySelectorAll('input[data-v]').forEach(i => i.onchange = () => { vis[i.dataset.v] = i.checked; redibujar(); prefsChanged(); });
+    root.querySelectorAll('button[data-preset]').forEach(b => b.onclick = () => { applyPreset(b.dataset.preset); syncChecks(); redibujar(); prefsChanged(); });
   }
   function htmlForm(o) {
     const v = valOf(o.id), today = new Date().toISOString().slice(0, 10);
@@ -458,8 +508,6 @@ App = (() => {
       <div class="vmeta">${esc(metaText())}</div></div>`;
   }
   function bind(root, o) {
-    root.querySelectorAll('input[data-v]').forEach(i => i.onchange = () => { vis[i.dataset.v] = i.checked; redibujar(); prefsChanged(); });
-    root.querySelectorAll('button[data-preset]').forEach(b => b.onclick = () => { applyPreset(b.dataset.preset); syncChecks(); redibujar(); prefsChanged(); });
     const f = root.querySelector('.vform'); if (!f) return;
     let res = null; const send = f.querySelector('.vsend'), det = f.querySelector('.vdet'), nota = f.querySelector('.vnota');
     const upd = () => { send.disabled = !res || (res === 'Diferente' && nota.value.trim().length < 5); };
@@ -476,7 +524,7 @@ App = (() => {
   }
 
   return {META: META || {}, D, byId, F, CAT, PCAT, FLAGS, vis, cfg, esc, fmt, init: initMap, select, step, fitLocal, fitAll, applyFilters, options, csv, flush, refreshStatus,
-    saveCfg, locate, on, savePrefs, hasFilters, clearFilters, CAPS, capasCerca, setCapas, valOf, valTag, srcTag, htmlKpis, htmlDetail, htmlLayers, htmlForm, bind, kmFlag,
+    saveCfg, locate, on, savePrefs, hasFilters, clearFilters, CAPS, capasCerca, setCapas, valOf, valTag, srcTag, htmlKpis, htmlDetail, htmlPanelCapas, bindCapas, htmlForm, bind, kmFlag,
     auth: {logged, login, logout, changePassword, get sess() { return sess; }, canSubmit: () => logged() && sess.rol !== 'Consulta'},
     get filtered() { return filtered; }, get cur() { return cur; }, get queueLen() { return queue.length; }, get map() { return map; }};
 })();

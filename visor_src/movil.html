@@ -15,6 +15,11 @@ html,body{overflow:hidden;overscroll-behavior:none;font-size:15px}
 .top input{flex:1;font:600 17px var(--f-head);padding:11px 12px;min-width:0}
 .ib{min-width:46px;min-height:46px;padding:0;font-size:19px;position:relative;display:grid;place-items:center}
 .ib[hidden]{display:none}
+#capSheet{position:fixed;z-index:1150;left:0;right:0;bottom:0;max-height:52vh;display:flex;flex-direction:column;background:var(--panel);border-top:1px solid var(--line);border-radius:14px 14px 0 0;padding:10px 14px calc(12px + env(safe-area-inset-bottom,0px));box-shadow:0 -4px 18px rgba(0,0,0,.5)}
+#capSheet[hidden]{display:none}
+#capBd{overflow:auto;-webkit-overflow-scrolling:touch}
+.cphd{display:flex;justify-content:space-between;align-items:center;margin-bottom:6px}.cphd h3{font:700 19px var(--f-head);margin:0}
+.ib[aria-expanded=true]{border-color:var(--amber)}
 .fnote{background:#3a2f14;border-left:3px solid var(--amber);padding:10px 12px;font-size:13px}.fnote button{margin-left:6px;padding:4px 10px}
 .ib .qn{position:absolute;top:-5px;right:-5px;background:var(--red);color:#fff;border-radius:9px;font:700 11px var(--f-head);padding:1px 6px}
 #res{position:fixed;z-index:1001;left:10px;right:10px;top:calc(64px + env(safe-area-inset-top,0px));max-height:55vh;overflow:auto;background:var(--panel);border:1px solid var(--line);border-radius:8px;display:none}
@@ -56,10 +61,12 @@ dialog input{font-size:16px}
 <div class="top">
   <input id="q" type="search" placeholder="Buscar plantío" autocomplete="off" enterkeyhint="search" aria-label="Buscar plantío">
   <button class="ib" id="bClrTop" hidden aria-label="Limpiar filtros">✕</button>
+  <button class="ib" id="bCap" aria-label="Capas" aria-expanded="false"><svg width="17" height="17" viewBox="0 0 24 24" aria-hidden="true"><path d="M12 3 2 8l10 5 10-5-10-5Zm0 12L4.5 11.3 2 12.5l10 5 10-5-2.5-1.2L12 15Zm0 4-7.5-3.7L2 16.5l10 5 10-5-2.5-1.2L12 19Z" fill="currentColor"/></svg></button>
   <button class="ib" id="bFil" aria-label="Filtros y lista">☰</button>
   <button class="ib" id="gear" aria-label="Configuración">⚙<span class="qn" hidden></span></button>
 </div>
 <div id="res" role="listbox"></div>
+<section id="capSheet" hidden aria-label="Configuración de capas"><div class="cphd"><h3>Configuración de capas</h3><button class="ib" id="capX" type="button" aria-label="Cerrar">✕</button></div><div id="capBd"></div></section>
 <div class="fab"><button id="bLoc" aria-label="Mi ubicación">◎</button><button id="bFit" aria-label="Encuadrar lote">⤢</button></div>
 <section id="sheet" aria-label="Ficha del plantío"><div class="hd" id="shHd"><div class="grip"></div><div id="shTop"></div></div><div class="bd" id="shBd"></div></section>
 <div id="pnl">
@@ -81,7 +88,8 @@ dialog input{font-size:16px}
 <script>
 const $=id=>document.getElementById(id), A=App, sh=$('sheet');
 const setH=()=>document.documentElement.style.setProperty('--sheetH',(sh.classList.contains('peek')||sh.classList.contains('full'))?Math.min(sh.offsetHeight,innerHeight*.5)+'px':'0px');
-A.init('map',()=>({paddingTopLeft:[20,80],paddingBottomRight:[20,(sh.classList.contains('peek')||sh.classList.contains('full')?Math.min(sh.offsetHeight,innerHeight*.45):0)+20]}));
+A.init('map',()=>{ const cap=$('capSheet')&&!$('capSheet').hidden?$('capSheet').offsetHeight:0, ficha=(sh.classList.contains('peek')||sh.classList.contains('full'))?Math.min(sh.offsetHeight,innerHeight*.45):0;
+  return {paddingTopLeft:[20,80],paddingBottomRight:[20,Math.max(cap,ficha)+20]}; });
 A.options('fr').forEach(v=>$('fFr').add(new Option('Frente '+v,v)));
 A.options('sem').forEach(v=>$('fSem').add(new Option('Semana '+v,String(v))));
 [['sin_raja','Sin puntos de raja'],['sin_entrada','Sin ruta de entrada'],['sin_salida','Sin ruta de salida'],['raja_fuera','Rajas fuera del polígono'],
@@ -108,8 +116,7 @@ function sheetTop(o){
 }
 function sheet(o,state){
   sheetTop(o);
-  $('shBd').innerHTML=`<div class="sec">¿Cómo se trabajó?</div>${A.htmlForm(o)}${A.htmlDetail(o)}<div class="sec">Capas</div>${A.htmlLayers(o)}
-    <div class="nav"><button id="bPrev">← Ant.</button><button id="bLot">Lote</button><button id="bAll">Ruta</button><button id="bNext">Sig. →</button></div>`;
+  $('shBd').innerHTML=`<div class="sec">¿Cómo se trabajó?</div>${A.htmlForm(o)}${A.htmlDetail(o)}    <div class="nav"><button id="bPrev">← Ant.</button><button id="bLot">Lote</button><button id="bAll">Ruta</button><button id="bNext">Sig. →</button></div>`;
   A.bind($('shBd'),o);
   $('bPrev').onclick=()=>A.step(-1); $('bNext').onclick=()=>A.step(1);
   $('bLot').onclick=()=>{open('peek');A.fitLocal();}; $('bAll').onclick=()=>{open('peek');A.fitAll();};
@@ -121,7 +128,7 @@ let y0=null; $('shHd').addEventListener('pointerdown',e=>{y0=e.clientY;});
 $('shHd').addEventListener('pointerup',e=>{ if(y0==null) return; const dy=e.clientY-y0; y0=null;
   if(e.target.closest('button')) return;
   if(dy>40) open(sh.classList.contains('full')?'peek':null); else if(dy<-40) open('full'); else open(sh.classList.contains('full')?'peek':'full'); });
-A.on('select',o=>{ $('res').style.display='none'; $('pnl').classList.remove('on'); $('q').blur(); sheet(o); renderList(A.filtered); });
+A.on('select',o=>{ $('res').style.display='none'; $('pnl').classList.remove('on'); $('q').blur(); sheet(o); renderList(A.filtered); if(!$('capSheet').hidden) renderCap(); });
 A.on('filtered',renderList);
 A.on('status',()=>{ renderList(A.filtered); if(A.cur) sheetTop(A.cur); });
 A.on('queue',n=>{ const q=document.querySelector('#gear .qn'); q.hidden=!n; q.textContent=n; });
@@ -140,6 +147,10 @@ $('bFil').onclick=()=>{$('res').style.display='none';$('pnl').classList.add('on'
 $('pClose').onclick=()=>$('pnl').classList.remove('on');
 $('bLoc').onclick=()=>A.locate(); $('bFit').onclick=()=>A.cur?A.fitLocal():A.locate();
 $('gear').onclick=()=>UI.openCfg();
+// ---- configuración de capas: hoja inferior independiente de la ficha del plantío ----
+function renderCap(){ const b=$('capBd'), y=b.scrollTop; b.innerHTML=A.htmlPanelCapas(); A.bindCapas(b); b.scrollTop=y; }
+function toggleCap(on){ const p=$('capSheet'); on=(on===undefined)?p.hidden:on; p.hidden=!on; $('bCap').setAttribute('aria-expanded',String(on)); if(on){ $('res').style.display='none'; $('pnl').classList.remove('on'); renderCap(); if(A.cur) setTimeout(()=>A.fitLocal(),60); } }
+$('bCap').onclick=()=>toggleCap(); $('capX').onclick=()=>toggleCap(false);
 A.applyFilters(); A.flush(); A.refreshStatus();
 const h=location.hash.replace('#p',''); if(A.byId.has(h)) A.select(h);
 </script>

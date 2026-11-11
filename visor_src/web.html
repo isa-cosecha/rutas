@@ -37,6 +37,14 @@ main{position:relative} #map{height:100%}
 #bClr{padding:6px 10px}
 .fnote{background:#3a2f14;border-left:3px solid var(--amber);padding:8px 14px;font-size:12.5px}
 .fnote button{margin-left:6px;padding:3px 9px;font-size:12.5px}
+#tools{position:absolute;z-index:600;left:10px;top:92px;display:grid;gap:6px;justify-items:start}
+#tools button{display:flex;align-items:center;gap:6px;background:rgba(29,43,34,.96);border:1px solid var(--line);border-radius:6px;padding:7px 11px;font:600 13px var(--f-head);color:var(--ink);box-shadow:0 1px 5px rgba(0,0,0,.45)}
+#tools button[aria-expanded=true]{border-color:var(--amber)}
+#tools #tSide{width:36px;justify-content:center;font-size:19px;padding:3px 0;line-height:1.2}
+#capPanel{position:absolute;z-index:700;left:62px;top:92px;width:340px;max-height:calc(100% - 108px);overflow:auto;background:rgba(29,43,34,.97);border:1px solid var(--line);border-radius:8px;padding:12px 14px;box-shadow:0 4px 18px rgba(0,0,0,.5)}
+#capPanel[hidden]{display:none}
+.cphd{display:flex;justify-content:space-between;align-items:center;margin-bottom:8px}.cphd h3{font:700 18px var(--f-head);margin:0}.cphd button{padding:2px 9px}
+body.sb-off{grid-template-columns:1fr}body.sb-off #side{display:none}
 #hint{position:absolute;z-index:400;left:50%;bottom:22px;transform:translateX(-50%);background:rgba(29,43,34,.92);padding:6px 12px;border-radius:5px;font-size:12.5px;color:var(--mute)}
 </style>
 </head>
@@ -60,6 +68,12 @@ main{position:relative} #map{height:100%}
 </aside>
 <main>
   <div id="map"></div>
+  <div id="tools">
+    <button id="tSide" type="button" title="Ocultar listado" aria-label="Ocultar listado" aria-expanded="true">«</button>
+    <button id="tCapas" type="button" title="Configuración de capas" aria-expanded="false"><svg width="17" height="17" viewBox="0 0 24 24" aria-hidden="true"><path d="M12 3 2 8l10 5 10-5-10-5Zm0 12L4.5 11.3 2 12.5l10 5 10-5-2.5-1.2L12 15Zm0 4-7.5-3.7L2 16.5l10 5 10-5-2.5-1.2L12 19Z" fill="currentColor"/></svg> Capas</button>
+    <button id="tGear" type="button" hidden title="Mi cuenta" aria-label="Mi cuenta">⚙</button>
+  </div>
+  <div id="capPanel" hidden role="dialog" aria-label="Configuración de capas"></div>
   <div id="card"></div>
   <div id="hint">Busca un plantío o haz clic en un lote. Flechas ← → recorren la secuencia de corte.</div>
 </main>
@@ -69,7 +83,28 @@ main{position:relative} #map{height:100%}
 <script>/*__UI__*/</script>
 <script>
 const $=id=>document.getElementById(id), A=App;
-A.init('map',()=>({paddingTopLeft:[40,40],paddingBottomRight:[380,40]}));
+A.init('map',()=>{ const abierto=!$('capPanel').hidden, ancho=$('map').clientWidth;   // si el panel de capas está abierto, el encuadre usa el área libre
+  return {paddingTopLeft:[(abierto&&ancho-410-380>=260)?410:60,40],paddingBottomRight:[380,40]}; });
+// ---- listado lateral ocultable (se recuerda en este equipo) ----
+function setSide(off,persist){
+  document.body.classList.toggle('sb-off',off);
+  const b=$('tSide'); b.textContent=off?'»':'«'; b.title=off?'Mostrar listado':'Ocultar listado'; b.setAttribute('aria-label',b.title); b.setAttribute('aria-expanded',String(!off));
+  $('tGear').hidden=!off; if(persist){ try{localStorage.setItem('rp26_sb',off?'1':'0')}catch{} }
+  setTimeout(()=>A.map.invalidateSize(),60);
+}
+$('tSide').onclick=()=>setSide(!document.body.classList.contains('sb-off'),true);
+$('tGear').onclick=()=>UI.openCfg();
+let sb0=false; try{ sb0=localStorage.getItem('rp26_sb')==='1'; }catch{}
+if(sb0) setSide(true,false);
+// ---- panel de configuración de capas (no ocupa la ficha del plantío) ----
+function renderCap(){
+  const p=$('capPanel'), y=p.scrollTop;
+  p.innerHTML='<div class="cphd"><h3>Configuración de capas</h3><button id="capX" type="button" aria-label="Cerrar">✕</button></div>'+A.htmlPanelCapas();
+  A.bindCapas(p); $('capX').onclick=()=>toggleCap(false); p.scrollTop=y;
+}
+function toggleCap(on){ const p=$('capPanel'); on=(on===undefined)?p.hidden:on; p.hidden=!on; $('tCapas').setAttribute('aria-expanded',String(on)); if(on){ renderCap();
+  if(A.cur&&A.cur._cen&&A.map.latLngToContainerPoint(A.cur._cen).x<410) A.fitLocal(); } }   // si el panel tapa el plantío, se reencuadra
+$('tCapas').onclick=()=>toggleCap();
 A.options('fr').forEach(v=>$('fFr').add(new Option('Frente '+v,v)));
 A.options('sem').forEach(v=>$('fSem').add(new Option('Semana '+v,String(v))));
 [['sin_raja','Sin puntos de raja'],['sin_entrada','Sin ruta de entrada'],['sin_salida','Sin ruta de salida'],['raja_fuera','Rajas fuera del polígono'],
@@ -89,14 +124,13 @@ function card(o){
   const c=$('card');
   c.innerHTML=`<button class="mn" aria-label="Contraer ficha">–</button><h2>${o.id}</h2><div class="nm">${A.esc(o.nm)} ${A.srcTag(o)}</div>
    ${A.htmlKpis(o)}<div class="body"><div class="sec">¿Cómo se trabajó?</div>${A.htmlForm(o)}${A.htmlDetail(o)}
-   <div class="sec">Capas</div>${A.htmlLayers(o)}
    <div class="btns"><button id="bLot">Encuadrar lote</button><button id="bAll">Ruta completa</button><button id="bPrev">← Anterior</button><button id="bNext">Siguiente →</button></div></div>`;
   c.style.display='block'; A.bind(c,o);
   c.querySelector('.mn').onclick=()=>c.classList.toggle('min');
   $('bLot').onclick=A.fitLocal; $('bAll').onclick=A.fitAll; $('bPrev').onclick=()=>A.step(-1); $('bNext').onclick=()=>A.step(1);
 }
 A.on('filtered',renderList);
-A.on('select',o=>{ card(o); $('hint').style.display='none';
+A.on('select',o=>{ card(o); if(!$('capPanel').hidden) renderCap(); $('hint').style.display='none';
   renderList(A.filtered); const e2=document.querySelector(`.it[data-id="${o.id}"]`); e2&&e2.scrollIntoView({block:'nearest'}); });
 A.on('status',()=>{ renderList(A.filtered); });
 A.on('queue',n=>{ const q=document.querySelector('#gear .qn'); q.hidden=!n; q.textContent=n; });
@@ -108,7 +142,8 @@ $('list').addEventListener('keydown',e=>{if(e.key==='Enter'){const it=e.target.c
 const bindF=(id,k)=>$(id).addEventListener('input',()=>{A.F[k]=$(id).value;A.applyFilters();});
 bindF('q','q');bindF('fFr','fr');bindF('fSem','sem');bindF('fSrc','src');bindF('fFlag','flag');bindF('fVal','val');
 $('q').addEventListener('keydown',e=>{if(e.key==='Enter'&&A.filtered[0]) A.select(A.filtered[0].id); if(e.key==='Escape') A.clearFilters();});
-document.addEventListener('keydown',e=>{if(/INPUT|SELECT|TEXTAREA/.test(e.target.tagName)||document.querySelector('dialog[open]'))return; if(e.key==='ArrowRight')A.step(1); if(e.key==='ArrowLeft')A.step(-1);});
+document.addEventListener('keydown',e=>{if(e.key==='Escape'&&!$('capPanel').hidden&&!document.querySelector('dialog[open]')){toggleCap(false);return;}
+  if(/INPUT|SELECT|TEXTAREA/.test(e.target.tagName)||document.querySelector('dialog[open]'))return; if(e.key==='ArrowRight')A.step(1); if(e.key==='ArrowLeft')A.step(-1);});
 $('gear').onclick=()=>UI.openCfg();
 A.applyFilters(); A.flush(); A.refreshStatus();
 const h=location.hash.replace('#p',''); if(A.byId.has(h)) A.select(h);

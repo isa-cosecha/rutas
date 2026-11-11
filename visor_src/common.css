@@ -92,3 +92,4 @@ dialog.wide{width:min(780px,96vw);max-height:92vh;overflow:auto}
 .admt th{text-align:left;color:var(--mute);font-weight:600;padding:3px 6px;border-bottom:1px solid var(--line)}
 .admt td{padding:3px 6px;border-bottom:1px solid #26382c}
 .admt td.ok{color:#8fd9a8}.admt td.no{color:#ff9a8c}
+.icoc{width:19px;height:19px;object-fit:contain;display:block}

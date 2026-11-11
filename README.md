@@ -61,7 +61,9 @@ Ejecutar las pruebas del servidor: `node apps_script/harness.js test`.
 
 El visor integra las capas del proyecto QField (pozos, motores, válvulas, obstáculos, postes, ríos, red vial y quemas) en un solo archivo, `data/capas.json` (~1 MB; el proyecto original pesa 226 MB).
 
-**Cómo se muestran.** Al seleccionar un plantío aparecen solo las entidades que están a cierto radio del plantío (pozos 500 m, válvulas y obstáculos 120 m, postes 150 m, ríos 300 m…) **o** que traen su código (válvulas y obstáculos por `Lote`; quemas por `Codigo`). El modo **"Ver capas de todo el mapa"** (zoom 14 o más) muestra lo que cae en pantalla. Cada usuario enciende o apaga cada capa en la ficha del plantío y su elección se guarda en la hoja `Configuración` de Google Sheets (una columna por capa).
+**Cómo se muestran.** Al seleccionar un plantío aparecen solo las entidades que están a cierto radio del plantío (pozos 500 m, válvulas y obstáculos 120 m, postes 150 m, ríos 300 m…) **o** que traen su código (válvulas y obstáculos por `Lote`; quemas por `Codigo`). El modo **"Ver capas de todo el mapa"** (zoom 14 o más) muestra lo que cae en pantalla. Cada usuario enciende o apaga cada capa en el panel **Capas** (botón *Capas* sobre el mapa en la web; botón de capas en la barra superior en el celular) y su elección se guarda en la hoja `Configuración` de Google Sheets (una columna por capa). La ficha del plantío ya no lleva capas. Las válvulas de goteo y los postes eléctricos se dibujan con los íconos del proyecto QGIS (cruz azul con rombo; torre de alta tensión), cuyo tamaño sigue el zoom.
+
+**Listado lateral (web):** el botón **«** sobre el mapa oculta el listado para ver el mapa a ancho completo; **»** lo muestra de nuevo. Se recuerda en cada equipo.
 
 **Qué no se importó, y por qué.** Rajas y Maestro de plantíos ya estaban (las rajas del QField coinciden con las del visor, mediana 0.1 m). Las válvulas están repetidas dentro de "Obstáculos varios" (971 de 4,403): esa capa se importa sin ellas. Las nubes de vértices de quemas no se convierten a polígonos porque no cierran anillos válidos; se dibujan como líneas de contorno.
 

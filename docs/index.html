@@ -877,10 +877,11 @@ App = (() => {
     const osm = L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {maxZoom: 19, attribution: '© OpenStreetMap'});
     L.control.layers({'Satélite': sat, 'Calles (OSM)': osm}, {'Nombres': lbl}, {position: L.Browser.mobile ? 'topright' : 'bottomright'}).addTo(map);
     L.control.scale({imperial: false}).addTo(map);
-    const cv = L.canvas({padding: .5}); ctx = L.layerGroup().addTo(map); sel = L.layerGroup().addTo(map);
+    // Un solo lienzo (preferCanvas): si hubiera dos, el de arriba absorbe los clics y los lotes de abajo dejan de responder.
+    ctx = L.layerGroup().addTo(map); sel = L.layerGroup().addTo(map);
     const all = L.latLngBounds();
     D.forEach(o => { if (!o._rings.length) return;
-      const lay = L.polygon(o._rings, {renderer: cv, color: SRC_COL[o.src], weight: 1, fillOpacity: .12, opacity: .8});
+      const lay = L.polygon(o._rings, {color: SRC_COL[o.src], weight: 1, fillOpacity: .12, opacity: .8});
       lay.on('click', () => select(o.id)); if (!L.Browser.mobile) lay.bindTooltip(`${o.id} ${esc(o.nm)}`, {sticky: true});
       lay.addTo(ctx); all.extend(lay.getBounds()); o._ctx = lay; });
     map.fitBounds(all); return map;
@@ -926,6 +927,8 @@ App = (() => {
   const F = {q: '', fr: '', sem: '', src: '', flag: '', val: ''};
   let filtered = D;
   const kmFlag = o => o.src && o.dkmm > 0 && o.dP > 0 && Math.abs(o.dif) > 15;
+  const hasFilters = () => Object.values(F).some(v => v);
+  function clearFilters() { Object.keys(F).forEach(k => { F[k] = ''; }); applyFilters(); emit('filterscleared'); }
   function applyFilters() {
     const q = strip(F.q.trim());
     filtered = D.filter(o => (!q || o.id.includes(q) || strip(o.nm).includes(q)) && (!F.fr || o.fr == F.fr) && (!F.sem || String(o.sem) === F.sem)
@@ -1168,7 +1171,7 @@ App = (() => {
   }
 
   return {META: META || {}, D, byId, F, CAT, PCAT, FLAGS, vis, cfg, esc, fmt, init: initMap, select, step, fitLocal, fitAll, applyFilters, options, csv, flush, refreshStatus,
-    saveCfg, locate, on, savePrefs, valOf, valTag, srcTag, htmlKpis, htmlDetail, htmlLayers, htmlForm, bind, kmFlag,
+    saveCfg, locate, on, savePrefs, hasFilters, clearFilters, valOf, valTag, srcTag, htmlKpis, htmlDetail, htmlLayers, htmlForm, bind, kmFlag,
     auth: {logged, login, logout, changePassword, get sess() { return sess; }, canSubmit: () => logged() && sess.rol !== 'Consulta'},
     get filtered() { return filtered; }, get cur() { return cur; }, get queueLen() { return queue.length; }, get map() { return map; }};
 })();
@@ -1271,7 +1274,10 @@ A.options('sem').forEach(v=>$('fSem').add(new Option('Semana '+v,String(v))));
  ['no_llega_lote','Ruta termina a >1 km del lote'],['km','Distancia ingenio-lote ≠ Dist KM Mapeado (>15 %)'],['av','Con autovolteo']].forEach(([v,t])=>$('fFlag').add(new Option(t,v)));
 function renderList(fl){
   const cur=A.cur;
-  $('list').innerHTML=fl.map(o=>`<div class="it${cur&&cur.id===o.id?' on':''}" data-id="${o.id}" role="option" tabindex="0"><span class="c">${o.id}</span><span class="n">${A.esc(o.nm)}</span>
+  $('bClr').hidden=!A.hasFilters();
+  const fuera=cur&&A.hasFilters()&&!fl.some(o=>o.id===cur.id);
+  const nota=fuera?`<div class="fnote">Estás viendo <b>${cur.id}</b>, que no está en el filtro actual. <button type="button" id="fnClr">Quitar filtros</button></div>`:'';
+  $('list').innerHTML=nota+fl.map(o=>`<div class="it${cur&&cur.id===o.id?' on':''}" data-id="${o.id}" role="option" tabindex="0"><span class="c">${o.id}</span><span class="n">${A.esc(o.nm)}</span>
    <span class="tag ${o.src==='26-27'?'t27':o.src?'t26':'tno'}">${o.src||'—'}</span><span class="m">${o.fc||''} · ${A.esc(o.fr||'')} S${o.sem??''}-${o.sec??''} · TCH ${A.fmt(o.tch,0)} · ${A.fmt(o.dP,0)} km</span><span class="v">${A.valTag(A.valOf(o.id))}</span></div>`).join('');
   const n=fl.length,a=fl.filter(o=>o.src==='26-27').length,v=fl.filter(o=>A.valOf(o.id)).length;
   $('stats').innerHTML=`<span><b>${n}</b> plantíos</span><span><b>${a}</b> mapeo 26-27</span><span><b>${v}</b> validados</span><button id="bCsv" title="Descargar lo filtrado">Descargar CSV</button>`;
@@ -1292,11 +1298,14 @@ A.on('select',o=>{ card(o); $('hint').style.display='none';
   renderList(A.filtered); const e2=document.querySelector(`.it[data-id="${o.id}"]`); e2&&e2.scrollIntoView({block:'nearest'}); });
 A.on('status',()=>{ renderList(A.filtered); });
 A.on('queue',n=>{ const q=document.querySelector('#gear .qn'); q.hidden=!n; q.textContent=n; });
-$('list').addEventListener('click',e=>{const it=e.target.closest('.it'); if(it) A.select(it.dataset.id);});
+$('list').addEventListener('click',e=>{ if(e.target.id==='fnClr') return A.clearFilters(); const it=e.target.closest('.it'); if(it) A.select(it.dataset.id);});
+const FIDS={q:'q',fr:'fFr',sem:'fSem',src:'fSrc',flag:'fFlag',val:'fVal'};
+A.on('filterscleared',()=>{ for(const [k,id] of Object.entries(FIDS)) $(id).value=''; });
+$('bClr').onclick=()=>A.clearFilters();
 $('list').addEventListener('keydown',e=>{if(e.key==='Enter'){const it=e.target.closest('.it'); if(it) A.select(it.dataset.id);}});
 const bindF=(id,k)=>$(id).addEventListener('input',()=>{A.F[k]=$(id).value;A.applyFilters();});
 bindF('q','q');bindF('fFr','fr');bindF('fSem','sem');bindF('fSrc','src');bindF('fFlag','flag');bindF('fVal','val');
-$('q').addEventListener('keydown',e=>{if(e.key==='Enter'&&A.filtered[0]) A.select(A.filtered[0].id);});
+$('q').addEventListener('keydown',e=>{if(e.key==='Enter'&&A.filtered[0]) A.select(A.filtered[0].id); if(e.key==='Escape') A.clearFilters();});
 document.addEventListener('keydown',e=>{if(/INPUT|SELECT|TEXTAREA/.test(e.target.tagName)||document.querySelector('dialog[open]'))return; if(e.key==='ArrowRight')A.step(1); if(e.key==='ArrowLeft')A.step(-1);});
 $('gear').onclick=()=>UI.openCfg();
 A.applyFilters(); A.flush(); A.refreshStatus();
@@ -1315,9 +1324,13 @@ A.options('sem').forEach(v=>$('fSem').add(new Option('Semana '+v,String(v))));
 const row=o=>`<div class="it" data-id="${o.id}" role="option"><span class="c">${o.id}</span><span class="n">${A.esc(o.nm)}</span><span class="tag ${o.src==='26-27'?'t27':o.src?'t26':'tno'}">${o.src||'—'}</span>
   <span class="m">${o.fc||''} · ${A.esc(o.fr||'')} S${o.sem??''}-${o.sec??''} · ${A.fmt(o.dP,1)} km</span><span class="v">${A.valTag(A.valOf(o.id))}</span></div>`;
 function renderList(fl){
-  $('plist').innerHTML=fl.slice(0,400).map(row).join('')+(fl.length>400?`<div style="padding:12px;color:var(--mute)">Mostrando 400 de ${fl.length}. Ajusta los filtros o usa el CSV.</div>`:'');
+  const fuera=A.cur&&A.hasFilters()&&!fl.some(o=>o.id===A.cur.id);
+  const nota=fuera?`<div class="fnote">Estás viendo <b>${A.cur.id}</b>, que no está en el filtro actual. <button type="button" id="fnClr">Quitar filtros</button></div>`:'';
+  $('plist').innerHTML=nota+fl.slice(0,400).map(row).join('')+(fl.length>400?`<div style="padding:12px;color:var(--mute)">Mostrando 400 de ${fl.length}. Ajusta los filtros o usa el CSV.</div>`:'');
   const v=fl.filter(o=>A.valOf(o.id)).length;
-  $('pst').innerHTML=`<span><b>${fl.length}</b> plantíos</span><span><b>${v}</b> validados</span><button id="bCsv" class="primary">Descargar CSV</button>`;
+  $('pst').innerHTML=`<span><b>${fl.length}</b> plantíos</span><span><b>${v}</b> validados</span>${A.hasFilters()?'<button id="bClrP" type="button">✕ Limpiar</button>':''}<button id="bCsv" class="primary">Descargar CSV</button>`;
+  const bp=$('bClrP'); if(bp) bp.onclick=()=>A.clearFilters();
+  $('bClrTop').hidden=!A.hasFilters();
   $('bCsv').onclick=A.csv;
   const n=['fr','sem','src','flag','val'].filter(k=>A.F[k]).length; $('bFil').textContent=n?'☰'+n:'☰';
   if(document.activeElement===$('q')&&A.F.q) showRes(fl);
@@ -1343,7 +1356,7 @@ let y0=null; $('shHd').addEventListener('pointerdown',e=>{y0=e.clientY;});
 $('shHd').addEventListener('pointerup',e=>{ if(y0==null) return; const dy=e.clientY-y0; y0=null;
   if(e.target.closest('button')) return;
   if(dy>40) open(sh.classList.contains('full')?'peek':null); else if(dy<-40) open('full'); else open(sh.classList.contains('full')?'peek':'full'); });
-A.on('select',o=>{ $('res').style.display='none'; $('pnl').classList.remove('on'); $('q').blur(); sheet(o); });
+A.on('select',o=>{ $('res').style.display='none'; $('pnl').classList.remove('on'); $('q').blur(); sheet(o); renderList(A.filtered); });
 A.on('filtered',renderList);
 A.on('status',()=>{ renderList(A.filtered); if(A.cur) sheetTop(A.cur); });
 A.on('queue',n=>{ const q=document.querySelector('#gear .qn'); q.hidden=!n; q.textContent=n; });
@@ -1352,7 +1365,10 @@ $('q').addEventListener('focus',()=>{ if(A.F.q) showRes(A.filtered); });
 $('q').addEventListener('keydown',e=>{ if(e.key==='Enter'&&A.filtered[0]) A.select(A.filtered[0].id); });
 A.map.on('click',()=>{ $('res').style.display='none'; });
 $('res').addEventListener('click',e=>{const it=e.target.closest('.it'); if(it) A.select(it.dataset.id);});
-$('plist').addEventListener('click',e=>{const it=e.target.closest('.it'); if(it) A.select(it.dataset.id);});
+$('plist').addEventListener('click',e=>{ if(e.target.id==='fnClr') return A.clearFilters(); const it=e.target.closest('.it'); if(it) A.select(it.dataset.id);});
+const FIDS={fr:'fFr',sem:'fSem',src:'fSrc',flag:'fFlag',val:'fVal'};
+A.on('filterscleared',()=>{ $('q').value=''; for(const id of Object.values(FIDS)) $(id).value=''; $('res').style.display='none'; });
+$('bClrTop').onclick=()=>A.clearFilters();
 const bindF=(id,k)=>$(id).addEventListener('input',()=>{A.F[k]=$(id).value;A.applyFilters();});
 bindF('fFr','fr');bindF('fSem','sem');bindF('fSrc','src');bindF('fFlag','flag');bindF('fVal','val');
 $('bFil').onclick=()=>{$('res').style.display='none';$('pnl').classList.add('on');};
@@ -1374,6 +1390,7 @@ const h=location.hash.replace('#p',''); if(A.byId.has(h)) A.select(h);
       <select id="fSrc" aria-label="Mapeo"><option value="">Cualquier mapeo</option><option value="26-27">Mapeado 26-27</option><option value="25-26">Solo 25-26 (pendiente)</option><option value="none">Sin mapeo</option></select>
       <select id="fVal" aria-label="Validación"><option value="">Cualquier validación</option><option value="none">Sin respuesta</option><option value="Según lo planificado">Según lo planificado</option><option value="Diferente">Trabajado diferente</option><option value="pend">Pendiente de envío</option></select>
       <select id="fFlag" aria-label="Alerta" style="grid-column:1/3"><option value="">Sin filtro de alerta</option></select>
+      <button id="bClr" type="button" hidden style="grid-column:1/3">✕ Limpiar filtros</button>
     </div>
   </header>
   <div class="stats" id="stats"></div>
@@ -1389,6 +1406,7 @@ const h=location.hash.replace('#p',''); if(A.byId.has(h)) A.select(h);
 <div id="map"></div>
 <div class="top">
   <input id="q" type="search" placeholder="Buscar plantío" autocomplete="off" enterkeyhint="search" aria-label="Buscar plantío">
+  <button class="ib" id="bClrTop" hidden aria-label="Limpiar filtros">✕</button>
   <button class="ib" id="bFil" aria-label="Filtros y lista">☰</button>
   <button class="ib" id="gear" aria-label="Configuración">⚙<span class="qn" hidden></span></button>
 </div>
@@ -1435,6 +1453,9 @@ main{position:relative} #map{height:100%}
 #card .mn{position:absolute;top:8px;right:8px;padding:2px 9px}
 #card.min .body{display:none}
 .btns{display:flex;gap:6px;margin-top:12px;flex-wrap:wrap}
+#bClr{padding:6px 10px}
+.fnote{background:#3a2f14;border-left:3px solid var(--amber);padding:8px 14px;font-size:12.5px}
+.fnote button{margin-left:6px;padding:3px 9px;font-size:12.5px}
 #hint{position:absolute;z-index:400;left:50%;bottom:22px;transform:translateX(-50%);background:rgba(29,43,34,.92);padding:6px 12px;border-radius:5px;font-size:12.5px;color:var(--mute)}
 </script>
 <script type="text/plain" id="cssMovil">
@@ -1443,6 +1464,8 @@ html,body{overflow:hidden;overscroll-behavior:none;font-size:15px}
 .top{position:fixed;z-index:1000;left:0;right:0;top:0;padding:calc(8px + env(safe-area-inset-top,0px)) 10px 8px;display:flex;gap:6px;background:linear-gradient(rgba(29,43,34,.95),rgba(29,43,34,.75))}
 .top input{flex:1;font:600 17px var(--f-head);padding:11px 12px;min-width:0}
 .ib{min-width:46px;min-height:46px;padding:0;font-size:19px;position:relative;display:grid;place-items:center}
+.ib[hidden]{display:none}
+.fnote{background:#3a2f14;border-left:3px solid var(--amber);padding:10px 12px;font-size:13px}.fnote button{margin-left:6px;padding:4px 10px}
 .ib .qn{position:absolute;top:-5px;right:-5px;background:var(--red);color:#fff;border-radius:9px;font:700 11px var(--f-head);padding:1px 6px}
 #res{position:fixed;z-index:1001;left:10px;right:10px;top:calc(64px + env(safe-area-inset-top,0px));max-height:55vh;overflow:auto;background:var(--panel);border:1px solid var(--line);border-radius:8px;display:none}
 .it{display:grid;grid-template-columns:62px 1fr auto;gap:2px 8px;padding:11px 12px;border-bottom:1px solid #26382c}

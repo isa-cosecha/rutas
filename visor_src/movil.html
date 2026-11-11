@@ -14,6 +14,8 @@ html,body{overflow:hidden;overscroll-behavior:none;font-size:15px}
 .top{position:fixed;z-index:1000;left:0;right:0;top:0;padding:calc(8px + env(safe-area-inset-top,0px)) 10px 8px;display:flex;gap:6px;background:linear-gradient(rgba(29,43,34,.95),rgba(29,43,34,.75))}
 .top input{flex:1;font:600 17px var(--f-head);padding:11px 12px;min-width:0}
 .ib{min-width:46px;min-height:46px;padding:0;font-size:19px;position:relative;display:grid;place-items:center}
+.ib[hidden]{display:none}
+.fnote{background:#3a2f14;border-left:3px solid var(--amber);padding:10px 12px;font-size:13px}.fnote button{margin-left:6px;padding:4px 10px}
 .ib .qn{position:absolute;top:-5px;right:-5px;background:var(--red);color:#fff;border-radius:9px;font:700 11px var(--f-head);padding:1px 6px}
 #res{position:fixed;z-index:1001;left:10px;right:10px;top:calc(64px + env(safe-area-inset-top,0px));max-height:55vh;overflow:auto;background:var(--panel);border:1px solid var(--line);border-radius:8px;display:none}
 .it{display:grid;grid-template-columns:62px 1fr auto;gap:2px 8px;padding:11px 12px;border-bottom:1px solid #26382c}
@@ -53,6 +55,7 @@ dialog input{font-size:16px}
 <div id="map"></div>
 <div class="top">
   <input id="q" type="search" placeholder="Buscar plantío" autocomplete="off" enterkeyhint="search" aria-label="Buscar plantío">
+  <button class="ib" id="bClrTop" hidden aria-label="Limpiar filtros">✕</button>
   <button class="ib" id="bFil" aria-label="Filtros y lista">☰</button>
   <button class="ib" id="gear" aria-label="Configuración">⚙<span class="qn" hidden></span></button>
 </div>
@@ -86,9 +89,13 @@ A.options('sem').forEach(v=>$('fSem').add(new Option('Semana '+v,String(v))));
 const row=o=>`<div class="it" data-id="${o.id}" role="option"><span class="c">${o.id}</span><span class="n">${A.esc(o.nm)}</span><span class="tag ${o.src==='26-27'?'t27':o.src?'t26':'tno'}">${o.src||'—'}</span>
   <span class="m">${o.fc||''} · ${A.esc(o.fr||'')} S${o.sem??''}-${o.sec??''} · ${A.fmt(o.dP,1)} km</span><span class="v">${A.valTag(A.valOf(o.id))}</span></div>`;
 function renderList(fl){
-  $('plist').innerHTML=fl.slice(0,400).map(row).join('')+(fl.length>400?`<div style="padding:12px;color:var(--mute)">Mostrando 400 de ${fl.length}. Ajusta los filtros o usa el CSV.</div>`:'');
+  const fuera=A.cur&&A.hasFilters()&&!fl.some(o=>o.id===A.cur.id);
+  const nota=fuera?`<div class="fnote">Estás viendo <b>${A.cur.id}</b>, que no está en el filtro actual. <button type="button" id="fnClr">Quitar filtros</button></div>`:'';
+  $('plist').innerHTML=nota+fl.slice(0,400).map(row).join('')+(fl.length>400?`<div style="padding:12px;color:var(--mute)">Mostrando 400 de ${fl.length}. Ajusta los filtros o usa el CSV.</div>`:'');
   const v=fl.filter(o=>A.valOf(o.id)).length;
-  $('pst').innerHTML=`<span><b>${fl.length}</b> plantíos</span><span><b>${v}</b> validados</span><button id="bCsv" class="primary">Descargar CSV</button>`;
+  $('pst').innerHTML=`<span><b>${fl.length}</b> plantíos</span><span><b>${v}</b> validados</span>${A.hasFilters()?'<button id="bClrP" type="button">✕ Limpiar</button>':''}<button id="bCsv" class="primary">Descargar CSV</button>`;
+  const bp=$('bClrP'); if(bp) bp.onclick=()=>A.clearFilters();
+  $('bClrTop').hidden=!A.hasFilters();
   $('bCsv').onclick=A.csv;
   const n=['fr','sem','src','flag','val'].filter(k=>A.F[k]).length; $('bFil').textContent=n?'☰'+n:'☰';
   if(document.activeElement===$('q')&&A.F.q) showRes(fl);
@@ -114,7 +121,7 @@ let y0=null; $('shHd').addEventListener('pointerdown',e=>{y0=e.clientY;});
 $('shHd').addEventListener('pointerup',e=>{ if(y0==null) return; const dy=e.clientY-y0; y0=null;
   if(e.target.closest('button')) return;
   if(dy>40) open(sh.classList.contains('full')?'peek':null); else if(dy<-40) open('full'); else open(sh.classList.contains('full')?'peek':'full'); });
-A.on('select',o=>{ $('res').style.display='none'; $('pnl').classList.remove('on'); $('q').blur(); sheet(o); });
+A.on('select',o=>{ $('res').style.display='none'; $('pnl').classList.remove('on'); $('q').blur(); sheet(o); renderList(A.filtered); });
 A.on('filtered',renderList);
 A.on('status',()=>{ renderList(A.filtered); if(A.cur) sheetTop(A.cur); });
 A.on('queue',n=>{ const q=document.querySelector('#gear .qn'); q.hidden=!n; q.textContent=n; });
@@ -123,7 +130,10 @@ $('q').addEventListener('focus',()=>{ if(A.F.q) showRes(A.filtered); });
 $('q').addEventListener('keydown',e=>{ if(e.key==='Enter'&&A.filtered[0]) A.select(A.filtered[0].id); });
 A.map.on('click',()=>{ $('res').style.display='none'; });
 $('res').addEventListener('click',e=>{const it=e.target.closest('.it'); if(it) A.select(it.dataset.id);});
-$('plist').addEventListener('click',e=>{const it=e.target.closest('.it'); if(it) A.select(it.dataset.id);});
+$('plist').addEventListener('click',e=>{ if(e.target.id==='fnClr') return A.clearFilters(); const it=e.target.closest('.it'); if(it) A.select(it.dataset.id);});
+const FIDS={fr:'fFr',sem:'fSem',src:'fSrc',flag:'fFlag',val:'fVal'};
+A.on('filterscleared',()=>{ $('q').value=''; for(const id of Object.values(FIDS)) $(id).value=''; $('res').style.display='none'; });
+$('bClrTop').onclick=()=>A.clearFilters();
 const bindF=(id,k)=>$(id).addEventListener('input',()=>{A.F[k]=$(id).value;A.applyFilters();});
 bindF('fFr','fr');bindF('fSem','sem');bindF('fSrc','src');bindF('fFlag','flag');bindF('fVal','val');
 $('bFil').onclick=()=>{$('res').style.display='none';$('pnl').classList.add('on');};

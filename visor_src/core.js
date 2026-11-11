@@ -53,10 +53,11 @@ App = (() => {
     const osm = L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {maxZoom: 19, attribution: '© OpenStreetMap'});
     L.control.layers({'Satélite': sat, 'Calles (OSM)': osm}, {'Nombres': lbl}, {position: L.Browser.mobile ? 'topright' : 'bottomright'}).addTo(map);
     L.control.scale({imperial: false}).addTo(map);
-    const cv = L.canvas({padding: .5}); ctx = L.layerGroup().addTo(map); sel = L.layerGroup().addTo(map);
+    // Un solo lienzo (preferCanvas): si hubiera dos, el de arriba absorbe los clics y los lotes de abajo dejan de responder.
+    ctx = L.layerGroup().addTo(map); sel = L.layerGroup().addTo(map);
     const all = L.latLngBounds();
     D.forEach(o => { if (!o._rings.length) return;
-      const lay = L.polygon(o._rings, {renderer: cv, color: SRC_COL[o.src], weight: 1, fillOpacity: .12, opacity: .8});
+      const lay = L.polygon(o._rings, {color: SRC_COL[o.src], weight: 1, fillOpacity: .12, opacity: .8});
       lay.on('click', () => select(o.id)); if (!L.Browser.mobile) lay.bindTooltip(`${o.id} ${esc(o.nm)}`, {sticky: true});
       lay.addTo(ctx); all.extend(lay.getBounds()); o._ctx = lay; });
     map.fitBounds(all); return map;
@@ -102,6 +103,8 @@ App = (() => {
   const F = {q: '', fr: '', sem: '', src: '', flag: '', val: ''};
   let filtered = D;
   const kmFlag = o => o.src && o.dkmm > 0 && o.dP > 0 && Math.abs(o.dif) > 15;
+  const hasFilters = () => Object.values(F).some(v => v);
+  function clearFilters() { Object.keys(F).forEach(k => { F[k] = ''; }); applyFilters(); emit('filterscleared'); }
   function applyFilters() {
     const q = strip(F.q.trim());
     filtered = D.filter(o => (!q || o.id.includes(q) || strip(o.nm).includes(q)) && (!F.fr || o.fr == F.fr) && (!F.sem || String(o.sem) === F.sem)
@@ -344,7 +347,7 @@ App = (() => {
   }
 
   return {META: META || {}, D, byId, F, CAT, PCAT, FLAGS, vis, cfg, esc, fmt, init: initMap, select, step, fitLocal, fitAll, applyFilters, options, csv, flush, refreshStatus,
-    saveCfg, locate, on, savePrefs, valOf, valTag, srcTag, htmlKpis, htmlDetail, htmlLayers, htmlForm, bind, kmFlag,
+    saveCfg, locate, on, savePrefs, hasFilters, clearFilters, valOf, valTag, srcTag, htmlKpis, htmlDetail, htmlLayers, htmlForm, bind, kmFlag,
     auth: {logged, login, logout, changePassword, get sess() { return sess; }, canSubmit: () => logged() && sess.rol !== 'Consulta'},
     get filtered() { return filtered; }, get cur() { return cur; }, get queueLen() { return queue.length; }, get map() { return map; }};
 })();

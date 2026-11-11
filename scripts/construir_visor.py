@@ -42,8 +42,9 @@ def parts(name):
             re.findall(r'<script>(.*?)</script>', t, re.S)[-1])
 w_css, w_body, w_js = parts('web.html')
 m_css, m_body, m_js = parts('movil.html')
-dlg = rd(S('dialog.html')).replace('<div class="row">', '<div class="row"><button id="modeSw" type="button"></button>')
+dlg = rd(S('dialog.html'))   # el botón #modeSw (vista web/móvil) vive dentro de 'Mi cuenta'
 esc = lambda s: s.replace('</script>', '<\\/script>')
+CAPAS_CFG = json.dumps(json.load(open(os.path.join(ROOT, 'scripts', 'capas_config.json'), encoding='utf-8')), ensure_ascii=False).replace('</', '<\\/')
 
 BOOT = r'''
 (() => {
@@ -171,6 +172,8 @@ html = f'''<!doctype html>
 <script>{rd(S('vendor', 'leaflet', 'leaflet.js'))}</script>
 <script>{core}</script>
 <script>{rd(S('common_ui.js'))}</script>
+<script>{rd(S('admin_capas.js'))}</script>
+<script type="application/json" id="capasCfg">{CAPAS_CFG}</script>
 <script type="text/plain" id="jsWeb">{esc(w_js)}</script>
 <script type="text/plain" id="jsMovil">{esc(m_js)}</script>
 <template id="tplWeb">{w_body}</template>

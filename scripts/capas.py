@@ -145,7 +145,7 @@ def construir_capa(cfg, shp, gap_m):
         for lo, la, f in zip(lon, lat, filas):
             if en_zona(lo, la): feats_p.append((la, lo, f))
             else: stats['fuera de zona'] += 1
-    elif tipo in ('linea', 'poligono'):
+    elif tipo in ('linea', 'poligono'):   # cada parte (anillo exterior o interior) es una entidad
         for sr in rd.iterShapeRecords(fields=nombres):
             stats['leidos'] += 1
             sh = sr.shape
@@ -157,8 +157,6 @@ def construir_capa(cfg, shp, gap_m):
                 if len(pts) < 2: continue
                 ux, uy = to_utm.transform([p[0] for p in pts], [p[1] for p in pts])
                 ln = LineString(list(zip(ux, uy)))
-                if tipo == 'poligono' and a != partes[0] and sh.shapeType in (5, 15, 25):
-                    pass  # los agujeros se descartan: sólo se dibuja el contorno exterior de cada parte
                 s = ln.simplify(simp) if simp > 0 else ln
                 cs = list(s.coords)
                 if len(cs) < (4 if tipo == 'poligono' else 2): stats['partes degeneradas'] += 1; continue
@@ -227,7 +225,8 @@ def construir(carpeta, cfg_path=None, log=print):
         log(f"  {c['nombre']:<34} {o['n']:>7,} entidades {json.dumps(st, ensure_ascii=False)}{extra}")
     if not capas: raise SystemExit(f'No se encontró ninguna capa de apoyo en {carpeta}')
     doc = {'generado': dt.datetime.now(dt.timezone.utc).isoformat(timespec='seconds'), 'fuentes': fuentes, 'omitidas': ausentes, 'capas': capas}
-    cuerpo = json.dumps(doc, ensure_ascii=False, separators=(',', ':'))
+    # la versión depende solo del contenido (no de la fecha de generación): mismos datos = misma versión = sin descargas de más
+    cuerpo = json.dumps({k: v for k, v in doc.items() if k != 'generado'}, ensure_ascii=False, separators=(',', ':'))
     doc['version'] = hashlib.sha256(cuerpo.encode()).hexdigest()[:12]
     return doc
 

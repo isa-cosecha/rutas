@@ -76,3 +76,19 @@ dialog details{margin:10px 0;font-size:13px} dialog summary{cursor:pointer;color
 /* ---- capas de apoyo ---- */
 .dotc{width:13px;height:13px;border-radius:50%;border:2.5px solid;display:inline-block;box-sizing:border-box}
 .polc{width:16px;height:11px;border:2px dashed;display:inline-block;box-sizing:border-box}
+/* ---- herramienta de administrador: capas QField ---- */
+dialog.wide{width:min(780px,96vw);max-height:92vh;overflow:auto}
+.admnote{background:var(--field);border-left:3px solid var(--amber);padding:8px 10px;font-size:13px;border-radius:3px;margin-bottom:10px}
+.admstep{margin:12px 0;font-size:14px}
+.admsub{font-size:12.5px;color:var(--mute);margin:4px 0}
+.admrow{display:flex;gap:8px;flex-wrap:wrap;align-items:center;margin:8px 0}
+.filebtn{display:inline-block;background:var(--amber);color:#2a1d00;border-radius:6px;padding:8px 14px;font:600 14px var(--f-head);cursor:pointer}
+.filebtn.alt{background:var(--panel2);color:var(--ink);border:1px solid var(--line)}
+.filebtn:focus-within{outline:2px solid var(--amber);outline-offset:2px}
+.pbar{height:6px;background:var(--field);border-radius:3px;overflow:hidden;margin:6px 0}
+#admBar{height:100%;width:0;background:var(--amber);transition:width .15s}
+#admLog{background:#0f1a14;border:1px solid var(--line);border-radius:6px;padding:8px;font:11.5px/1.45 ui-monospace,Consolas,monospace;max-height:150px;overflow:auto;white-space:pre-wrap;margin:6px 0;color:#c8d6cb}
+.admt{width:100%;border-collapse:collapse;font-size:12.5px;margin:6px 0}
+.admt th{text-align:left;color:var(--mute);font-weight:600;padding:3px 6px;border-bottom:1px solid var(--line)}
+.admt td{padding:3px 6px;border-bottom:1px solid #26382c}
+.admt td.ok{color:#8fd9a8}.admt td.no{color:#ff9a8c}

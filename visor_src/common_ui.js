@@ -54,6 +54,7 @@ UI = (() => {
     const s = auth.sess;
     $('cfgMsg').textContent = m || '';
     $('cfgWho').innerHTML = s ? `Usuario: <b>${A.esc(s.nombre)}</b> (${A.esc(s.user)}) · Rol: <b>${A.esc(s.rol)}</b>` : 'Sin sesión';
+    $('cfgAdm').hidden = !(s && s.rol === 'Administrador');
     $('cfgData').value = A.cfg.data || ''; $('cfgGh').value = A.cfg.gh || ''; $('cfgUrl').value = A.cfg.url || '';
     const x = A.META; $('cfgVer').textContent = x.version ? `Datos versión ${x.version}, generados ${String(x.generado || '').slice(0, 16).replace('T', ' ')} UTC${x.origen ? ' · ' + x.origen : ''}${x.fuentes ? ' · Programa: ' + x.fuentes.programa : ''}${x.capas ? ' · Capas de apoyo ' + x.capas.version : ''}` : '';
     $('cfgQ').textContent = A.queueLen ? `${A.queueLen} respuesta(s) pendiente(s) de envío.` : 'Sin respuestas pendientes.';
@@ -81,6 +82,7 @@ UI = (() => {
       const l = await auth.login(auth.sess.user, n1);
       $('pwDlg').close(); toast(l.ok ? 'Clave cambiada' : 'Clave cambiada. Ingresa de nuevo.');
     } catch { m('Sin conexión con el servidor.'); } };
+  if (typeof initAdmin === 'function') initAdmin();   // herramientas de administrador (admin_capas.js)
   return {toast, openCfg, ensureLogin};
 })();
 }

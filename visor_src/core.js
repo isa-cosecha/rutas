@@ -146,6 +146,17 @@ App = (() => {
   }
   const capasTodoPronto = () => { clearTimeout(capAllT); capAllT = setTimeout(capasTodo, 200); };
   const redibujar = () => { if (cur) draw(cur); capasTodo(); };
+  function setCapas(doc) {                             // vista previa en este equipo (no se guarda ni se publica)
+    const nuevas = (doc && doc.capas) || [];
+    D.forEach(o => { delete o._cap; });
+    CAPS.length = 0; nuevas.forEach(c => CAPS.push(c));
+    CAPS.forEach(c => { const k = 'x' + c.id; if (!(k in vis)) vis[k] = !!c.defecto; if (!PREF_KEYS.includes(k)) PREF_KEYS.push(k); });
+    if (CAPS.length && !('xall' in vis)) { vis.xall = false; PREF_KEYS.push('xall'); }
+    PRESETS.todo = PREF_KEYS.filter(k => k !== 'ref' && k !== 'xall');
+    if (META) META.capasVista = doc && doc.version;
+    if (map && capAll) capAll.clearLayers();
+    if (cur) { draw(cur); emit('select', cur); } capasTodo();
+  }
 
   // ---------- mapa ----------
   let map, sel, ctx, cur = null, curLocal = null, curAll = null, padFn = () => ({padding: [30, 30]}), meLayer = null;
@@ -465,7 +476,7 @@ App = (() => {
   }
 
   return {META: META || {}, D, byId, F, CAT, PCAT, FLAGS, vis, cfg, esc, fmt, init: initMap, select, step, fitLocal, fitAll, applyFilters, options, csv, flush, refreshStatus,
-    saveCfg, locate, on, savePrefs, hasFilters, clearFilters, CAPS, capasCerca, valOf, valTag, srcTag, htmlKpis, htmlDetail, htmlLayers, htmlForm, bind, kmFlag,
+    saveCfg, locate, on, savePrefs, hasFilters, clearFilters, CAPS, capasCerca, setCapas, valOf, valTag, srcTag, htmlKpis, htmlDetail, htmlLayers, htmlForm, bind, kmFlag,
     auth: {logged, login, logout, changePassword, get sess() { return sess; }, canSubmit: () => logged() && sess.rol !== 'Consulta'},
     get filtered() { return filtered; }, get cur() { return cur; }, get queueLen() { return queue.length; }, get map() { return map; }};
 })();

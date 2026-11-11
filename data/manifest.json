@@ -1,6 +1,6 @@
 {
  "version": "591f07ac6056",
- "generado": "2026-11-11T18:21:11+00:00",
+ "generado": "2026-11-10T16:15:32+00:00",
  "bytes": 4854637,
  "plantios": 1197,
  "indicadores": {
@@ -22,9 +22,9 @@
   "maestro": "Maestro_General_20260901.zip"
  },
  "capas": {
-  "version": "ee764734c7f8",
+  "version": "ee3e0cdbc1e8",
   "bytes": 1083392,
-  "generado": "2026-11-11T17:26:20+00:00",
+  "generado": "2026-11-11T18:30:42+00:00",
   "capas": {
    "pozos": 169,
    "motores": 52,

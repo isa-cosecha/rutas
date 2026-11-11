@@ -40,5 +40,36 @@
     <label>URL de datos en GitHub (carpeta data/)<input id="cfgData" type="url" placeholder="https://raw.githubusercontent.com/usuario/repo/main/data/"></label>
     <label>Token de GitHub (solo si el repositorio es privado)<input id="cfgGh" type="password" autocomplete="off" placeholder="github_pat_…"></label>
   </details>
-  <div class="row"><button id="cfgReload" type="button">Actualizar datos</button><button id="cfgSync" type="button">Sincronizar ahora</button><button id="cfgCancel" type="button">Cerrar</button><button id="cfgSave" class="primary">Guardar</button></div>
+  <div class="row"><button id="modeSw" type="button"></button><button id="cfgAdm" type="button" hidden>Administrar capas (QField)</button><button id="cfgReload" type="button">Actualizar datos</button><button id="cfgSync" type="button">Sincronizar ahora</button><button id="cfgCancel" type="button">Cerrar</button><button id="cfgSave" class="primary">Guardar</button></div>
+</form></dialog>
+
+<dialog id="admDlg" class="wide"><form method="dialog">
+  <h3>Capas de apoyo (QField) → capas.json</h3>
+  <div class="admnote">Solo administradores. Todo se procesa en este equipo: los archivos del proyecto no se suben a ningún servidor.</div>
+  <div class="admstep"><b>1. Elige el proyecto QField</b>
+    <div class="admrow">
+      <label class="filebtn">Elegir carpeta…<input id="admDir" type="file" webkitdirectory multiple hidden></label>
+      <label class="filebtn alt">o elegir archivos .shp/.dbf/.prj…<input id="admFiles" type="file" multiple accept=".shp,.dbf,.prj,.cpg,.shx" hidden></label>
+    </div>
+    <div class="admsub">Selecciona la carpeta que contiene las subcarpetas de las capas (Pozos, Red Vial, Limites Quemas…). Si tienes el proyecto en .zip, descomprímelo primero.</div>
+    <div id="admFound"></div></div>
+  <div class="admstep"><b>2. Convertir</b>
+    <div class="admrow"><button id="admGo" class="primary" type="button" disabled>Convertir capas</button><span id="admEstado" class="admsub"></span></div>
+    <div class="pbar"><div id="admBar"></div></div>
+    <pre id="admLog" aria-live="polite"></pre></div>
+  <div class="admstep" id="admOut" hidden><b>3. Resultado</b>
+    <div id="admRes"></div>
+    <div class="admrow">
+      <button id="admPrev" type="button">Vista previa en este equipo</button>
+      <button id="admDown" type="button">Descargar capas.json</button>
+      <button id="admPubShow" type="button" class="primary">Publicar en GitHub…</button>
+    </div>
+    <div id="admPub" hidden>
+      <div class="admsub" id="admPubInfo"></div>
+      <label><span>Token de GitHub con permiso <i>Contents: Read and write</i> sobre este repositorio (no se guarda)</span><input id="admTok" type="password" autocomplete="off" placeholder="github_pat_…"></label>
+      <div class="admrow"><button id="admPubGo" type="button" class="primary">Publicar capas.json</button></div>
+      <div id="admPubMsg" class="admsub" role="status"></div>
+    </div>
+  </div>
+  <div class="row"><button id="admClose" type="button">Cerrar</button></div>
 </form></dialog>

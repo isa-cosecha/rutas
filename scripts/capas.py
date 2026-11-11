@@ -194,6 +194,8 @@ def construir_capa(cfg, shp, gap_m):
     out = {'id': cfg['id'], 'nombre': cfg['nombre'], 'tipo': TIPOS[tipo], 'estilo': cfg['estilo'], 'radio': cfg.get('radio', 150),
            'defecto': bool(cfg.get('defecto', False)), 'vinculo': bool(vinc), 'popup': [p[1] for p in popup],
            'titulo': next((i for i, p in enumerate(popup) if nk(p[0]) == nk(cfg.get('titulo', ''))), -1)}
+    if cfg.get('sobre'):   # la capa se muestra solo donde cae sobre el plantío seleccionado
+        out['sobre'] = {'tol': float(cfg['sobre'].get('tolerancia_m', 5)), 'min': float(cfg['sobre'].get('minimo', 0.5))}
     if cat:
         colores = {nk(k): v for k, v in cat['colores'].items()}
         usadas = set(T.C)

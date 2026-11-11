@@ -193,6 +193,7 @@ const AdminCapas = (() => {
     }
     const out = {id: cfg.id, nombre: cfg.nombre, tipo: TIPOS[tipo], estilo: cfg.estilo, radio: cfg.radio ?? 150, defecto: !!cfg.defecto, vinculo: !!vinc, popup: popup.map(p => p[1]),
       titulo: popup.findIndex(p => nk(p[0]) === nk(cfg.titulo || ''))};
+    if (cfg.sobre) out.sobre = {tol: Number(cfg.sobre.tolerancia_m ?? 5), min: Number(cfg.sobre.minimo ?? 0.5)};   // solo lo que cae sobre el plantío
     if (cat) {
       const colores = {}, usadas = new Set(T.C), map = {};
       Object.entries(cat.colores).forEach(([kk, vv]) => { colores[nk(kk)] = vv; });

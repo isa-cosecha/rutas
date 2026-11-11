@@ -117,9 +117,19 @@ App = (() => {
   function distPlantio(o, la, lo) {                    // metros al polígono del plantío (0 si está dentro)
     if (inPlantio(o, [la, lo])) return 0;
     let best = Infinity;
-    for (const poly of o._rings) { const r = poly[0];
-      for (let i = 1; i < r.length; i++) { const d = dSeg((r[i - 1][1] - lo) * KLON, (r[i - 1][0] - la) * KLAT, (r[i][1] - lo) * KLON, (r[i][0] - la) * KLAT); if (d < best) best = d; } }
+    for (const poly of o._rings) for (const r of poly)
+      for (let i = 1; i < r.length; i++) { const d = dSeg((r[i - 1][1] - lo) * KLON, (r[i - 1][0] - la) * KLAT, (r[i][1] - lo) * KLON, (r[i][0] - la) * KLAT); if (d < best) best = d; }
     return best;
+  }
+  // ¿El punto está sobre el lote? Cuenta todo el interior del contorno exterior (incluidas las islas excluidas del Maestro) más una tolerancia.
+  function sobreLote(o, la, lo, tol) {
+    if (!o._obb) o._obb = o._rings.map(poly => { let a = 90, b = 180, c = -90, d = -180; poly[0].forEach(([y, x]) => { if (y < a) a = y; if (y > c) c = y; if (x < b) b = x; if (x > d) d = x; }); return [a, b, c, d]; });
+    const dla = tol / KLAT, dlo = tol / KLON, R = o._rings, B = o._obb;
+    for (let k = 0; k < R.length; k++) { const b = B[k]; if (la >= b[0] && la <= b[2] && lo >= b[1] && lo <= b[3] && pip([la, lo], R[k][0])) return true; }
+    for (let k = 0; k < R.length; k++) { const b = B[k]; if (la < b[0] - dla || la > b[2] + dla || lo < b[1] - dlo || lo > b[3] + dlo) continue;   // cuadro lejano: se descarta
+      const r = R[k][0];
+      for (let i = 1; i < r.length; i++) if (dSeg((r[i - 1][1] - lo) * KLON, (r[i - 1][0] - la) * KLAT, (r[i][1] - lo) * KLON, (r[i][0] - la) * KLAT) <= tol) return true; }
+    return false;
   }
   function lineaCerca(o, ll, rad) {                    // ¿algún tramo está a ≤ rad metros del plantío?
     const S0 = o._bb[0] - rad / KLAT, N0 = o._bb[2] + rad / KLAT, W0 = o._bb[1] - rad / KLON, E0 = o._bb[3] + rad / KLON;
@@ -133,22 +143,36 @@ App = (() => {
     }
     return false;
   }
-  const poligonoCerca = (o, ll, rad) => lineaCerca(o, ll, rad) || (o._cen && pip(o._cen, ll));
-  function capasCerca(o) {                             // por capa: entidades dentro del radio O con el código del plantío
-    if (o._cap) return o._cap;
-    const res = {};
-    CAPS.forEach(c => {
-      capaPrep(c); const rad = c.radio, idx = new Set();
-      if (o._bb) {
-        capaBBox(c, o._bb[0] - rad / KLAT, o._bb[1] - rad / KLON, o._bb[2] + rad / KLAT, o._bb[3] + rad / KLON).forEach(i => {
-          if (c.tipo === 'p' ? distPlantio(o, c._lat[i], c._lon[i]) <= rad : c.tipo === 'l' ? lineaCerca(o, c._ln[i], rad) : poligonoCerca(o, c._ln[i], rad)) idx.add(i);
-        });
-      }
-      if (c._byLink && c._byLink.has(o.id)) c._byLink.get(o.id).forEach(i => idx.add(i));
-      res[c.id] = [...idx];
-    });
-    return (o._cap = res);
+  // Capas "sobre el plantío" (quemas): no se usa radio ni código; se muestra solo lo que cae encima del lote seleccionado.
+  const SOBRE_DEFECTO = {quemaP: 1, quemaAC: 1, quemaPV: 1, aa: 1};        // para capas.json anteriores que no declaran 'sobre'
+  const reglaSobre = c => c.sobre || (SOBRE_DEFECTO[c.id] ? {tol: 5, min: .5} : null);
+  function fraccionSobre(o, ll, tol) {                 // fracción del largo del trazo (o del borde del polígono) que cae sobre el plantío
+    const S0 = o._bb[0] - tol / KLAT, N0 = o._bb[2] + tol / KLAT, W0 = o._bb[1] - tol / KLON, E0 = o._bb[3] + tol / KLON;
+    let tot = 0, den = 0;
+    for (let i = 1; i < ll.length; i++) {
+      const a = ll[i - 1], b = ll[i], len = Math.hypot((b[1] - a[1]) * KLON, (b[0] - a[0]) * KLAT); if (!len) continue;
+      const k = Math.max(3, Math.ceil(len / 2)), w = len / k;           // muestras cada ≤2 m (mínimo 3 por tramo)
+      for (let t = 0; t < k; t++) { const f = (t + .5) / k, la = a[0] + (b[0] - a[0]) * f, lo = a[1] + (b[1] - a[1]) * f; tot += w;
+        if (la >= S0 && la <= N0 && lo >= W0 && lo <= E0 && sobreLote(o, la, lo, tol)) den += w; }
+    }
+    return tot ? den / tot : 0;
   }
+  const poligonoCerca = (o, ll, rad) => lineaCerca(o, ll, rad) || (o._cen && pip(o._cen, ll));
+  /** Entidades de UNA capa para el plantío (se calcula bajo demanda y se guarda por plantío y capa). */
+  function cercaCapa(o, c) {
+    const cache = o._cap || (o._cap = {}); if (cache[c.id]) return cache[c.id];
+    capaPrep(c); const rad = c.radio, idx = new Set(), rs = reglaSobre(c);
+    if (rs) {                                            // ajuste exacto: solo lo que cae sobre el lote
+      if (o._bb) capaBBox(c, o._bb[0] - rs.tol / KLAT, o._bb[1] - rs.tol / KLON, o._bb[2] + rs.tol / KLAT, o._bb[3] + rs.tol / KLON).forEach(i => {
+        if (c.tipo === 'p' ? sobreLote(o, c._lat[i], c._lon[i], rs.tol) : fraccionSobre(o, c._ln[i], rs.tol) >= rs.min) idx.add(i); });
+    } else {                                             // por radio alrededor del plantío O por su código
+      if (o._bb) capaBBox(c, o._bb[0] - rad / KLAT, o._bb[1] - rad / KLON, o._bb[2] + rad / KLAT, o._bb[3] + rad / KLON).forEach(i => {
+        if (c.tipo === 'p' ? distPlantio(o, c._lat[i], c._lon[i]) <= rad : c.tipo === 'l' ? lineaCerca(o, c._ln[i], rad) : poligonoCerca(o, c._ln[i], rad)) idx.add(i); });
+      if (c._byLink && c._byLink.has(o.id)) c._byLink.get(o.id).forEach(i => idx.add(i));
+    }
+    return (cache[c.id] = [...idx]);
+  }
+  function capasCerca(o) { const res = {}; CAPS.forEach(c => { res[c.id] = cercaCapa(o, c); }); return res; }   // todas las capas (leyenda)
   const capaColor = (c, row) => { if (!c.cat) return null; const k = c.C[row]; return (k >= 0 && c.cat.map[k]) || c.cat.otro; };
   function capaPopup(c, i) {
     const row = c.A[c.r[i]], g = j => (row[j] >= 0 ? c.S[row[j]] : null), t = c.titulo >= 0 ? g(c.titulo) : null;
@@ -175,7 +199,7 @@ App = (() => {
       grp.addLayer(L.polyline([...c._ln[i], c._ln[i][0]], {color: st.color, weight: st.peso, dashArray: dash, opacity: .9}).bindPopup(() => capaPopup(c, i)));
     }
   }
-  const capasDibujar = (o, grp) => { const near = capasCerca(o); CAPS.forEach(c => { if (vis['x' + c.id]) near[c.id].forEach(i => capaAdd(c, i, grp)); }); };
+  const capasDibujar = (o, grp) => { CAPS.forEach(c => { if (vis['x' + c.id]) cercaCapa(o, c).forEach(i => capaAdd(c, i, grp)); }); };   // solo calcula las capas encendidas
   let capAll = null, capAllT = null; const capWarn = {};
   function capasTodo() {                               // modo "todo el mapa": lo que cae en pantalla (zoom ≥ 14)
     if (!map || !capAll) return; capAll.clearLayers();
@@ -289,7 +313,7 @@ App = (() => {
       return [o.id, o.nm, o.fr, o.sem, o.sec, o.fc, o.var, o.nc, o.ha, o.tm, o.tch, o.reg, o.ten, o.mun, o.tc, o.car, o.ubi, o.mul, o.src || 'Sin mapeo',
         o.dE, o.dS, o.dP, o.dkm, o.dkmm, o.dif, o.tmkm, o.q.nR, o.q.rin == null ? '' : Math.round(o.q.rin * 100), o.q.av ? 'Sí' : 'No',
         o.flags.map(f => FLAGS[f] || f).concat(kmFlag(o) ? ['Distancia difiere >15%'] : []).join(' | '),
-        v.r ? (v.pend ? v.r + ' (pendiente de envío)' : v.r) : '', v.n || '', v.u || '', v.t || '', ...CSVCAP.map(c => capasCerca(o)[c.id].length)].map(cell).join(','); });
+        v.r ? (v.pend ? v.r + ' (pendiente de envío)' : v.r) : '', v.n || '', v.u || '', v.t || '', ...CSVCAP.map(c => cercaCapa(o, c).length)].map(cell).join(','); });
     const blob = new Blob(['\ufeff' + [H.join(','), ...rows].join('\r\n')], {type: 'text/csv;charset=utf-8'});
     const a = document.createElement('a'); a.href = URL.createObjectURL(blob);
     const tag = [F.fr && 'F' + F.fr, F.sem && 'S' + F.sem, F.src, F.flag, F.val].filter(Boolean).join('_');
@@ -472,7 +496,7 @@ App = (() => {
       : `<span class="sw${st.dash ? ' d' : ''}" style="background:${st.color};color:${st.color}"></span>`; };
   function htmlCapas(o) {
     const near = o ? capasCerca(o) : null;
-    return `<div class="sec">Capas de apoyo</div><div class="lg">${CAPS.map(c => `<label title="${vis.xall ? 'Modo todo el mapa' : 'A ≤ ' + c.radio + ' m del plantío' + (c.vinculo ? ' o con su código' : '')}"><input type="checkbox" data-v="x${c.id}" ${vis['x' + c.id] ? 'checked' : ''}>${swatch(c)}<span>${esc(c.nombre)}</span><span class="cnt">${!o || vis.xall ? '·' : near[c.id].length}</span></label>`).join('')}</div>
+    return `<div class="sec">Capas de apoyo</div><div class="lg">${CAPS.map(c => `<label title="${vis.xall ? 'Modo todo el mapa' : reglaSobre(c) ? 'Solo lo que cae sobre el plantío seleccionado' : 'A ≤ ' + c.radio + ' m del plantío' + (c.vinculo ? ' o con su código' : '')}"><input type="checkbox" data-v="x${c.id}" ${vis['x' + c.id] ? 'checked' : ''}>${swatch(c)}<span>${esc(c.nombre)}</span><span class="cnt">${!o || vis.xall ? '·' : near[c.id].length}</span></label>`).join('')}</div>
       <label class="chk"><input type="checkbox" data-v="xall" ${vis.xall ? 'checked' : ''}> Ver capas de todo el mapa (zoom 14+), no solo cerca del plantío</label>`;
   }
   /** Panel de configuración de capas (independiente de la ficha del plantío). Los conteos son del plantío seleccionado. */
@@ -524,7 +548,7 @@ App = (() => {
   }
 
   return {META: META || {}, D, byId, F, CAT, PCAT, FLAGS, vis, cfg, esc, fmt, init: initMap, select, step, fitLocal, fitAll, applyFilters, options, csv, flush, refreshStatus,
-    saveCfg, locate, on, savePrefs, hasFilters, clearFilters, CAPS, capasCerca, setCapas, valOf, valTag, srcTag, htmlKpis, htmlDetail, htmlPanelCapas, bindCapas, htmlForm, bind, kmFlag,
+    saveCfg, locate, on, savePrefs, hasFilters, clearFilters, CAPS, capasCerca, setCapas, cercaCapa, _t: {fraccionSobre, distPlantio, capaBBox, reglaSobre}, valOf, valTag, srcTag, htmlKpis, htmlDetail, htmlPanelCapas, bindCapas, htmlForm, bind, kmFlag,
     auth: {logged, login, logout, changePassword, get sess() { return sess; }, canSubmit: () => logged() && sess.rol !== 'Consulta'},
     get filtered() { return filtered; }, get cur() { return cur; }, get queueLen() { return queue.length; }, get map() { return map; }};
 })();

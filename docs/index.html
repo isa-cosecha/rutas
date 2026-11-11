@@ -992,9 +992,19 @@ App = (() => {
   function distPlantio(o, la, lo) {                    // metros al polígono del plantío (0 si está dentro)
     if (inPlantio(o, [la, lo])) return 0;
     let best = Infinity;
-    for (const poly of o._rings) { const r = poly[0];
-      for (let i = 1; i < r.length; i++) { const d = dSeg((r[i - 1][1] - lo) * KLON, (r[i - 1][0] - la) * KLAT, (r[i][1] - lo) * KLON, (r[i][0] - la) * KLAT); if (d < best) best = d; } }
+    for (const poly of o._rings) for (const r of poly)
+      for (let i = 1; i < r.length; i++) { const d = dSeg((r[i - 1][1] - lo) * KLON, (r[i - 1][0] - la) * KLAT, (r[i][1] - lo) * KLON, (r[i][0] - la) * KLAT); if (d < best) best = d; }
     return best;
+  }
+  // ¿El punto está sobre el lote? Cuenta todo el interior del contorno exterior (incluidas las islas excluidas del Maestro) más una tolerancia.
+  function sobreLote(o, la, lo, tol) {
+    if (!o._obb) o._obb = o._rings.map(poly => { let a = 90, b = 180, c = -90, d = -180; poly[0].forEach(([y, x]) => { if (y < a) a = y; if (y > c) c = y; if (x < b) b = x; if (x > d) d = x; }); return [a, b, c, d]; });
+    const dla = tol / KLAT, dlo = tol / KLON, R = o._rings, B = o._obb;
+    for (let k = 0; k < R.length; k++) { const b = B[k]; if (la >= b[0] && la <= b[2] && lo >= b[1] && lo <= b[3] && pip([la, lo], R[k][0])) return true; }
+    for (let k = 0; k < R.length; k++) { const b = B[k]; if (la < b[0] - dla || la > b[2] + dla || lo < b[1] - dlo || lo > b[3] + dlo) continue;   // cuadro lejano: se descarta
+      const r = R[k][0];
+      for (let i = 1; i < r.length; i++) if (dSeg((r[i - 1][1] - lo) * KLON, (r[i - 1][0] - la) * KLAT, (r[i][1] - lo) * KLON, (r[i][0] - la) * KLAT) <= tol) return true; }
+    return false;
   }
   function lineaCerca(o, ll, rad) {                    // ¿algún tramo está a ≤ rad metros del plantío?
     const S0 = o._bb[0] - rad / KLAT, N0 = o._bb[2] + rad / KLAT, W0 = o._bb[1] - rad / KLON, E0 = o._bb[3] + rad / KLON;
@@ -1008,22 +1018,36 @@ App = (() => {
     }
     return false;
   }
-  const poligonoCerca = (o, ll, rad) => lineaCerca(o, ll, rad) || (o._cen && pip(o._cen, ll));
-  function capasCerca(o) {                             // por capa: entidades dentro del radio O con el código del plantío
-    if (o._cap) return o._cap;
-    const res = {};
-    CAPS.forEach(c => {
-      capaPrep(c); const rad = c.radio, idx = new Set();
-      if (o._bb) {
-        capaBBox(c, o._bb[0] - rad / KLAT, o._bb[1] - rad / KLON, o._bb[2] + rad / KLAT, o._bb[3] + rad / KLON).forEach(i => {
-          if (c.tipo === 'p' ? distPlantio(o, c._lat[i], c._lon[i]) <= rad : c.tipo === 'l' ? lineaCerca(o, c._ln[i], rad) : poligonoCerca(o, c._ln[i], rad)) idx.add(i);
-        });
-      }
-      if (c._byLink && c._byLink.has(o.id)) c._byLink.get(o.id).forEach(i => idx.add(i));
-      res[c.id] = [...idx];
-    });
-    return (o._cap = res);
+  // Capas "sobre el plantío" (quemas): no se usa radio ni código; se muestra solo lo que cae encima del lote seleccionado.
+  const SOBRE_DEFECTO = {quemaP: 1, quemaAC: 1, quemaPV: 1, aa: 1};        // para capas.json anteriores que no declaran 'sobre'
+  const reglaSobre = c => c.sobre || (SOBRE_DEFECTO[c.id] ? {tol: 5, min: .5} : null);
+  function fraccionSobre(o, ll, tol) {                 // fracción del largo del trazo (o del borde del polígono) que cae sobre el plantío
+    const S0 = o._bb[0] - tol / KLAT, N0 = o._bb[2] + tol / KLAT, W0 = o._bb[1] - tol / KLON, E0 = o._bb[3] + tol / KLON;
+    let tot = 0, den = 0;
+    for (let i = 1; i < ll.length; i++) {
+      const a = ll[i - 1], b = ll[i], len = Math.hypot((b[1] - a[1]) * KLON, (b[0] - a[0]) * KLAT); if (!len) continue;
+      const k = Math.max(3, Math.ceil(len / 2)), w = len / k;           // muestras cada ≤2 m (mínimo 3 por tramo)
+      for (let t = 0; t < k; t++) { const f = (t + .5) / k, la = a[0] + (b[0] - a[0]) * f, lo = a[1] + (b[1] - a[1]) * f; tot += w;
+        if (la >= S0 && la <= N0 && lo >= W0 && lo <= E0 && sobreLote(o, la, lo, tol)) den += w; }
+    }
+    return tot ? den / tot : 0;
   }
+  const poligonoCerca = (o, ll, rad) => lineaCerca(o, ll, rad) || (o._cen && pip(o._cen, ll));
+  /** Entidades de UNA capa para el plantío (se calcula bajo demanda y se guarda por plantío y capa). */
+  function cercaCapa(o, c) {
+    const cache = o._cap || (o._cap = {}); if (cache[c.id]) return cache[c.id];
+    capaPrep(c); const rad = c.radio, idx = new Set(), rs = reglaSobre(c);
+    if (rs) {                                            // ajuste exacto: solo lo que cae sobre el lote
+      if (o._bb) capaBBox(c, o._bb[0] - rs.tol / KLAT, o._bb[1] - rs.tol / KLON, o._bb[2] + rs.tol / KLAT, o._bb[3] + rs.tol / KLON).forEach(i => {
+        if (c.tipo === 'p' ? sobreLote(o, c._lat[i], c._lon[i], rs.tol) : fraccionSobre(o, c._ln[i], rs.tol) >= rs.min) idx.add(i); });
+    } else {                                             // por radio alrededor del plantío O por su código
+      if (o._bb) capaBBox(c, o._bb[0] - rad / KLAT, o._bb[1] - rad / KLON, o._bb[2] + rad / KLAT, o._bb[3] + rad / KLON).forEach(i => {
+        if (c.tipo === 'p' ? distPlantio(o, c._lat[i], c._lon[i]) <= rad : c.tipo === 'l' ? lineaCerca(o, c._ln[i], rad) : poligonoCerca(o, c._ln[i], rad)) idx.add(i); });
+      if (c._byLink && c._byLink.has(o.id)) c._byLink.get(o.id).forEach(i => idx.add(i));
+    }
+    return (cache[c.id] = [...idx]);
+  }
+  function capasCerca(o) { const res = {}; CAPS.forEach(c => { res[c.id] = cercaCapa(o, c); }); return res; }   // todas las capas (leyenda)
   const capaColor = (c, row) => { if (!c.cat) return null; const k = c.C[row]; return (k >= 0 && c.cat.map[k]) || c.cat.otro; };
   function capaPopup(c, i) {
     const row = c.A[c.r[i]], g = j => (row[j] >= 0 ? c.S[row[j]] : null), t = c.titulo >= 0 ? g(c.titulo) : null;
@@ -1050,7 +1074,7 @@ App = (() => {
       grp.addLayer(L.polyline([...c._ln[i], c._ln[i][0]], {color: st.color, weight: st.peso, dashArray: dash, opacity: .9}).bindPopup(() => capaPopup(c, i)));
     }
   }
-  const capasDibujar = (o, grp) => { const near = capasCerca(o); CAPS.forEach(c => { if (vis['x' + c.id]) near[c.id].forEach(i => capaAdd(c, i, grp)); }); };
+  const capasDibujar = (o, grp) => { CAPS.forEach(c => { if (vis['x' + c.id]) cercaCapa(o, c).forEach(i => capaAdd(c, i, grp)); }); };   // solo calcula las capas encendidas
   let capAll = null, capAllT = null; const capWarn = {};
   function capasTodo() {                               // modo "todo el mapa": lo que cae en pantalla (zoom ≥ 14)
     if (!map || !capAll) return; capAll.clearLayers();
@@ -1164,7 +1188,7 @@ App = (() => {
       return [o.id, o.nm, o.fr, o.sem, o.sec, o.fc, o.var, o.nc, o.ha, o.tm, o.tch, o.reg, o.ten, o.mun, o.tc, o.car, o.ubi, o.mul, o.src || 'Sin mapeo',
         o.dE, o.dS, o.dP, o.dkm, o.dkmm, o.dif, o.tmkm, o.q.nR, o.q.rin == null ? '' : Math.round(o.q.rin * 100), o.q.av ? 'Sí' : 'No',
         o.flags.map(f => FLAGS[f] || f).concat(kmFlag(o) ? ['Distancia difiere >15%'] : []).join(' | '),
-        v.r ? (v.pend ? v.r + ' (pendiente de envío)' : v.r) : '', v.n || '', v.u || '', v.t || '', ...CSVCAP.map(c => capasCerca(o)[c.id].length)].map(cell).join(','); });
+        v.r ? (v.pend ? v.r + ' (pendiente de envío)' : v.r) : '', v.n || '', v.u || '', v.t || '', ...CSVCAP.map(c => cercaCapa(o, c).length)].map(cell).join(','); });
     const blob = new Blob(['\ufeff' + [H.join(','), ...rows].join('\r\n')], {type: 'text/csv;charset=utf-8'});
     const a = document.createElement('a'); a.href = URL.createObjectURL(blob);
     const tag = [F.fr && 'F' + F.fr, F.sem && 'S' + F.sem, F.src, F.flag, F.val].filter(Boolean).join('_');
@@ -1347,7 +1371,7 @@ App = (() => {
       : `<span class="sw${st.dash ? ' d' : ''}" style="background:${st.color};color:${st.color}"></span>`; };
   function htmlCapas(o) {
     const near = o ? capasCerca(o) : null;
-    return `<div class="sec">Capas de apoyo</div><div class="lg">${CAPS.map(c => `<label title="${vis.xall ? 'Modo todo el mapa' : 'A ≤ ' + c.radio + ' m del plantío' + (c.vinculo ? ' o con su código' : '')}"><input type="checkbox" data-v="x${c.id}" ${vis['x' + c.id] ? 'checked' : ''}>${swatch(c)}<span>${esc(c.nombre)}</span><span class="cnt">${!o || vis.xall ? '·' : near[c.id].length}</span></label>`).join('')}</div>
+    return `<div class="sec">Capas de apoyo</div><div class="lg">${CAPS.map(c => `<label title="${vis.xall ? 'Modo todo el mapa' : reglaSobre(c) ? 'Solo lo que cae sobre el plantío seleccionado' : 'A ≤ ' + c.radio + ' m del plantío' + (c.vinculo ? ' o con su código' : '')}"><input type="checkbox" data-v="x${c.id}" ${vis['x' + c.id] ? 'checked' : ''}>${swatch(c)}<span>${esc(c.nombre)}</span><span class="cnt">${!o || vis.xall ? '·' : near[c.id].length}</span></label>`).join('')}</div>
       <label class="chk"><input type="checkbox" data-v="xall" ${vis.xall ? 'checked' : ''}> Ver capas de todo el mapa (zoom 14+), no solo cerca del plantío</label>`;
   }
   /** Panel de configuración de capas (independiente de la ficha del plantío). Los conteos son del plantío seleccionado. */
@@ -1399,7 +1423,7 @@ App = (() => {
   }
 
   return {META: META || {}, D, byId, F, CAT, PCAT, FLAGS, vis, cfg, esc, fmt, init: initMap, select, step, fitLocal, fitAll, applyFilters, options, csv, flush, refreshStatus,
-    saveCfg, locate, on, savePrefs, hasFilters, clearFilters, CAPS, capasCerca, setCapas, valOf, valTag, srcTag, htmlKpis, htmlDetail, htmlPanelCapas, bindCapas, htmlForm, bind, kmFlag,
+    saveCfg, locate, on, savePrefs, hasFilters, clearFilters, CAPS, capasCerca, setCapas, cercaCapa, _t: {fraccionSobre, distPlantio, capaBBox, reglaSobre}, valOf, valTag, srcTag, htmlKpis, htmlDetail, htmlPanelCapas, bindCapas, htmlForm, bind, kmFlag,
     auth: {logged, login, logout, changePassword, get sess() { return sess; }, canSubmit: () => logged() && sess.rol !== 'Consulta'},
     get filtered() { return filtered; }, get cur() { return cur; }, get queueLen() { return queue.length; }, get map() { return map; }};
 })();
@@ -1690,6 +1714,7 @@ const AdminCapas = (() => {
     }
     const out = {id: cfg.id, nombre: cfg.nombre, tipo: TIPOS[tipo], estilo: cfg.estilo, radio: cfg.radio ?? 150, defecto: !!cfg.defecto, vinculo: !!vinc, popup: popup.map(p => p[1]),
       titulo: popup.findIndex(p => nk(p[0]) === nk(cfg.titulo || ''))};
+    if (cfg.sobre) out.sobre = {tol: Number(cfg.sobre.tolerancia_m ?? 5), min: Number(cfg.sobre.minimo ?? 0.5)};   // solo lo que cae sobre el plantío
     if (cat) {
       const colores = {}, usadas = new Set(T.C), map = {};
       Object.entries(cat.colores).forEach(([kk, vv]) => { colores[nk(kk)] = vv; });
@@ -1841,7 +1866,7 @@ function initAdmin() {
   };
 }
 </script>
-<script type="application/json" id="capasCfg">{"_nota": "Cada capa se busca por nombre de archivo (sin extensión) dentro de la carpeta del proyecto QField. 'radio' = metros alrededor del plantío seleccionado. 'vinculo' = campo que relaciona la entidad con el código del plantío (se muestra aunque quede fuera del radio). Los ids deben existir también en apps_script/Codigo.gs (lista CAPAS) para guardarse en el perfil de usuario.", "gap_contorno_m": 40, "capas": [{"id": "pozos", "nombre": "Pozos", "archivo": "Pozos", "tipo": "punto", "radio": 500, "defecto": true, "estilo": {"color": "#5a5551", "relleno": "#fab07c", "r": 6, "peso": 2.5}, "titulo": "nombre del", "popup": [["nombre del", "Nombre"], ["id ana", "ID ANA"], ["region", "Región"], ["tipo de ri", "Tipo de riego"], ["uso", "Uso"], ["compania", "Compañía"], ["municipio", "Municipio"], ["subcuenca", "Subcuenca"], ["msnm", "msnm"]]}, {"id": "motores", "nombre": "Motores eléctricos", "archivo": "Motores Electricos", "tipo": "punto", "radio": 500, "defecto": false, "estilo": {"color": "#ffee2f", "relleno": "#becf50", "r": 6, "peso": 2.5}, "titulo": "nombre del", "popup": [["nombre del", "Nombre"], ["id ana", "ID ANA"], ["region", "Región"], ["tipo de ri", "Tipo de riego"], ["uso", "Uso"], ["compania", "Compañía"], ["municipio", "Municipio"], ["msnm", "msnm"]]}, {"id": "valvulas", "nombre": "Válvulas de goteo", "archivo": "Valvulas Goteo", "tipo": "punto", "radio": 120, "defecto": true, "vinculo": "lote", "estilo": {"color": "#232323", "relleno": "#4787e7", "r": 5, "peso": 1.2, "icono": "valvula"}, "titulo": "obstaculo", "popup": [["obstaculo", "Tipo"], ["lote", "Lote"], ["finca", "Finca"], ["region", "Región"], ["tipo de ri", "Tipo de riego"], ["rtk", "RTK"], ["ingresado", "Ingresado"]]}, {"id": "obstaculos", "nombre": "Otros obstáculos de riego", "archivo": "Obstaculos_Varios", "tipo": "punto", "radio": 120, "defecto": false, "vinculo": "lote", "excluir": {"campo": "obstaculo", "valores": ["Valvula Hidraulica"], "motivo": "ya están en la capa Válvulas de goteo"}, "categoria": {"campo": "obstaculo", "colores": {"Lavado": "#7dd3fc", "Hidrante": "#ef4444", "Poste Electrico": "#fbe625", "Valvula de Aire": "#2dd4bf", "CropX": "#a78bfa"}, "otro": "#d1d5db"}, "estilo": {"color": "#232323", "relleno": "#d1d5db", "r": 4, "peso": 1}, "titulo": "obstaculo", "popup": [["obstaculo", "Tipo"], ["nombre obs", "Nombre"], ["lote", "Lote"], ["finca", "Finca"], ["region", "Región"], ["tipo de ri", "Tipo de riego"], ["rtk", "RTK"], ["ingresado", "Ingresado"]]}, {"id": "postes", "nombre": "Postes eléctricos", "archivo": "Postes Electricos", "tipo": "punto", "radio": 150, "defecto": true, "estilo": {"color": "#000000", "relleno": "#fbe625", "r": 5, "peso": 1.2, "icono": "poste"}, "titulo": "name", "popup": [["name", "Identificador"]]}, {"id": "rios", "nombre": "Ríos", "archivo": "Rios Occidente", "tipo": "linea", "radio": 300, "defecto": true, "simplificar_m": 3, "estilo": {"color": "#23cdff", "peso": 3}, "titulo": "name", "popup": [["name", "Nombre"], ["waterway", "Tipo"]]}, {"id": "vial", "nombre": "Red vial", "archivo": "Red Vial", "tipo": "linea", "radio": 150, "defecto": false, "simplificar_m": 2, "categoria": {"campo": "categoria", "colores": {"principal": "#fd0613", "alterna": "#d06106", "terciario": "#f5de08"}, "otro": "#9ca3af"}, "estilo": {"color": "#f5de08", "peso": 3}, "titulo": "categoria", "popup": [["categoria", "Categoría"], ["tipo", "Tipo"], ["vehiculos", "Vehículos"], ["nota", "Nota"], ["dist (km)", "Dist (km)"], ["rutas", "Ruta"]]}, {"id": "quemaP", "nombre": "Límites de quema (polígonos)", "archivo": "Limites_Quemas_P", "tipo": "poligono", "radio": 60, "defecto": true, "vinculo": "codigo", "simplificar_m": 1.5, "estilo": {"color": "#fbe625", "relleno": "#fbe625", "peso": 2, "dash": "6 4", "opacidad": 0.1}, "titulo": "nombre", "popup": [["nombre", "Plantío"], ["codigo", "Código"], ["cuadro", "Cuadro"], ["estado", "Estado"], ["region", "Región"], ["propietari", "Propietario"], ["variedad", "Variedad"], ["area_agric", "Área agrícola (ha)"], ["zafra", "Zafra"]]}, {"id": "quemaAC", "nombre": "Contorno de quemas (AC)", "archivo": "Limites_Quemas", "tipo": "contorno", "radio": 60, "defecto": true, "vinculo": "codigo", "agrupar": ["codigo", "cuadro"], "orden": "id", "simplificar_m": 1.5, "estilo": {"color": "#fbe625", "peso": 2, "dash": "2 5"}, "titulo": "nombre", "popup": [["nombre", "Plantío"], ["codigo", "Código"], ["cuadro", "Cuadro"], ["estado", "Estado"], ["region", "Región"], ["propietari", "Propietario"], ["variedad", "Variedad"], ["zafra", "Zafra"]]}, {"id": "quemaPV", "nombre": "Quemas de proveedores", "archivo": "Limites_Quemas_Proveedores", "tipo": "contorno", "radio": 60, "defecto": true, "vinculo": "codigo", "agrupar": ["codigo", "cuadro"], "simplificar_m": 1.5, "estilo": {"color": "#ff7f00", "peso": 2, "dash": "2 5"}, "titulo": "nombre", "popup": [["nombre", "Plantío"], ["codigo", "Código"], ["cuadro", "Cuadro"], ["estado", "Estado"], ["region", "Región"], ["propietari", "Propietario"], ["variedad", "Variedad"], ["zafra", "Zafra"]]}, {"id": "aa", "nombre": "Áreas a autorizar (AA)", "archivo": "Limites_Quemas_Proveedores_AAutorizar", "tipo": "contorno", "radio": 60, "defecto": false, "agrupar": [], "simplificar_m": 1.5, "estilo": {"color": "#54b04a", "peso": 2, "dash": "2 5"}, "titulo": "departamen", "popup": [["departamen", "Departamento"]]}]}</script>
+<script type="application/json" id="capasCfg">{"_nota": "Cada capa se busca por nombre de archivo (sin extensión) dentro de la carpeta del proyecto QField. 'radio' = metros alrededor del plantío seleccionado. 'vinculo' = campo que relaciona la entidad con el código del plantío (se muestra aunque quede fuera del radio). Los ids deben existir también en apps_script/Codigo.gs (lista CAPAS) para guardarse en el perfil de usuario. 'sobre' = mostrar solo lo que cae sobre el plantío seleccionado (tolerancia_m por diferencias de digitalización; minimo = fracción del trazo que debe estar dentro); en ese caso no se usa 'radio' ni 'vinculo'.", "gap_contorno_m": 40, "capas": [{"id": "pozos", "nombre": "Pozos", "archivo": "Pozos", "tipo": "punto", "radio": 500, "defecto": true, "estilo": {"color": "#5a5551", "relleno": "#fab07c", "r": 6, "peso": 2.5}, "titulo": "nombre del", "popup": [["nombre del", "Nombre"], ["id ana", "ID ANA"], ["region", "Región"], ["tipo de ri", "Tipo de riego"], ["uso", "Uso"], ["compania", "Compañía"], ["municipio", "Municipio"], ["subcuenca", "Subcuenca"], ["msnm", "msnm"]]}, {"id": "motores", "nombre": "Motores eléctricos", "archivo": "Motores Electricos", "tipo": "punto", "radio": 500, "defecto": false, "estilo": {"color": "#ffee2f", "relleno": "#becf50", "r": 6, "peso": 2.5}, "titulo": "nombre del", "popup": [["nombre del", "Nombre"], ["id ana", "ID ANA"], ["region", "Región"], ["tipo de ri", "Tipo de riego"], ["uso", "Uso"], ["compania", "Compañía"], ["municipio", "Municipio"], ["msnm", "msnm"]]}, {"id": "valvulas", "nombre": "Válvulas de goteo", "archivo": "Valvulas Goteo", "tipo": "punto", "radio": 120, "defecto": true, "vinculo": "lote", "estilo": {"color": "#232323", "relleno": "#4787e7", "r": 5, "peso": 1.2, "icono": "valvula"}, "titulo": "obstaculo", "popup": [["obstaculo", "Tipo"], ["lote", "Lote"], ["finca", "Finca"], ["region", "Región"], ["tipo de ri", "Tipo de riego"], ["rtk", "RTK"], ["ingresado", "Ingresado"]]}, {"id": "obstaculos", "nombre": "Otros obstáculos de riego", "archivo": "Obstaculos_Varios", "tipo": "punto", "radio": 120, "defecto": false, "vinculo": "lote", "excluir": {"campo": "obstaculo", "valores": ["Valvula Hidraulica"], "motivo": "ya están en la capa Válvulas de goteo"}, "categoria": {"campo": "obstaculo", "colores": {"Lavado": "#7dd3fc", "Hidrante": "#ef4444", "Poste Electrico": "#fbe625", "Valvula de Aire": "#2dd4bf", "CropX": "#a78bfa"}, "otro": "#d1d5db"}, "estilo": {"color": "#232323", "relleno": "#d1d5db", "r": 4, "peso": 1}, "titulo": "obstaculo", "popup": [["obstaculo", "Tipo"], ["nombre obs", "Nombre"], ["lote", "Lote"], ["finca", "Finca"], ["region", "Región"], ["tipo de ri", "Tipo de riego"], ["rtk", "RTK"], ["ingresado", "Ingresado"]]}, {"id": "postes", "nombre": "Postes eléctricos", "archivo": "Postes Electricos", "tipo": "punto", "radio": 150, "defecto": true, "estilo": {"color": "#000000", "relleno": "#fbe625", "r": 5, "peso": 1.2, "icono": "poste"}, "titulo": "name", "popup": [["name", "Identificador"]]}, {"id": "rios", "nombre": "Ríos", "archivo": "Rios Occidente", "tipo": "linea", "radio": 300, "defecto": true, "simplificar_m": 3, "estilo": {"color": "#23cdff", "peso": 3}, "titulo": "name", "popup": [["name", "Nombre"], ["waterway", "Tipo"]]}, {"id": "vial", "nombre": "Red vial", "archivo": "Red Vial", "tipo": "linea", "radio": 150, "defecto": false, "simplificar_m": 2, "categoria": {"campo": "categoria", "colores": {"principal": "#fd0613", "alterna": "#d06106", "terciario": "#f5de08"}, "otro": "#9ca3af"}, "estilo": {"color": "#f5de08", "peso": 3}, "titulo": "categoria", "popup": [["categoria", "Categoría"], ["tipo", "Tipo"], ["vehiculos", "Vehículos"], ["nota", "Nota"], ["dist (km)", "Dist (km)"], ["rutas", "Ruta"]]}, {"id": "quemaP", "nombre": "Límites de quema (polígonos)", "archivo": "Limites_Quemas_P", "tipo": "poligono", "radio": 60, "defecto": true, "vinculo": "codigo", "simplificar_m": 1.5, "estilo": {"color": "#fbe625", "relleno": "#fbe625", "peso": 2, "dash": "6 4", "opacidad": 0.1}, "titulo": "nombre", "popup": [["nombre", "Plantío"], ["codigo", "Código"], ["cuadro", "Cuadro"], ["estado", "Estado"], ["region", "Región"], ["propietari", "Propietario"], ["variedad", "Variedad"], ["area_agric", "Área agrícola (ha)"], ["zafra", "Zafra"]], "sobre": {"tolerancia_m": 5, "minimo": 0.5}}, {"id": "quemaAC", "nombre": "Contorno de quemas (AC)", "archivo": "Limites_Quemas", "tipo": "contorno", "radio": 60, "defecto": true, "vinculo": "codigo", "agrupar": ["codigo", "cuadro"], "orden": "id", "simplificar_m": 1.5, "estilo": {"color": "#fbe625", "peso": 2, "dash": "2 5"}, "titulo": "nombre", "popup": [["nombre", "Plantío"], ["codigo", "Código"], ["cuadro", "Cuadro"], ["estado", "Estado"], ["region", "Región"], ["propietari", "Propietario"], ["variedad", "Variedad"], ["zafra", "Zafra"]], "sobre": {"tolerancia_m": 5, "minimo": 0.5}}, {"id": "quemaPV", "nombre": "Quemas de proveedores", "archivo": "Limites_Quemas_Proveedores", "tipo": "contorno", "radio": 60, "defecto": true, "vinculo": "codigo", "agrupar": ["codigo", "cuadro"], "simplificar_m": 1.5, "estilo": {"color": "#ff7f00", "peso": 2, "dash": "2 5"}, "titulo": "nombre", "popup": [["nombre", "Plantío"], ["codigo", "Código"], ["cuadro", "Cuadro"], ["estado", "Estado"], ["region", "Región"], ["propietari", "Propietario"], ["variedad", "Variedad"], ["zafra", "Zafra"]], "sobre": {"tolerancia_m": 5, "minimo": 0.5}}, {"id": "aa", "nombre": "Áreas a autorizar (AA)", "archivo": "Limites_Quemas_Proveedores_AAutorizar", "tipo": "contorno", "radio": 60, "defecto": false, "agrupar": [], "simplificar_m": 1.5, "estilo": {"color": "#54b04a", "peso": 2, "dash": "2 5"}, "titulo": "departamen", "popup": [["departamen", "Departamento"]], "sobre": {"tolerancia_m": 5, "minimo": 0.5}}]}</script>
 <script type="text/plain" id="jsWeb">
 const $=id=>document.getElementById(id), A=App;
 A.init('map',()=>{ const abierto=!$('capPanel').hidden, ancho=$('map').clientWidth;   // si el panel de capas está abierto, el encuadre usa el área libre

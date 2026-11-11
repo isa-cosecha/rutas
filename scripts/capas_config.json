@@ -1,5 +1,5 @@
 {
-  "_nota": "Cada capa se busca por nombre de archivo (sin extensión) dentro de la carpeta del proyecto QField. 'radio' = metros alrededor del plantío seleccionado. 'vinculo' = campo que relaciona la entidad con el código del plantío (se muestra aunque quede fuera del radio). Los ids deben existir también en apps_script/Codigo.gs (lista CAPAS) para guardarse en el perfil de usuario.",
+  "_nota": "Cada capa se busca por nombre de archivo (sin extensión) dentro de la carpeta del proyecto QField. 'radio' = metros alrededor del plantío seleccionado. 'vinculo' = campo que relaciona la entidad con el código del plantío (se muestra aunque quede fuera del radio). Los ids deben existir también en apps_script/Codigo.gs (lista CAPAS) para guardarse en el perfil de usuario. 'sobre' = mostrar solo lo que cae sobre el plantío seleccionado (tolerancia_m por diferencias de digitalización; minimo = fracción del trazo que debe estar dentro); en ese caso no se usa 'radio' ni 'vinculo'.",
   "gap_contorno_m": 40,
   "capas": [
     {
@@ -368,7 +368,11 @@
           "zafra",
           "Zafra"
         ]
-      ]
+      ],
+      "sobre": {
+        "tolerancia_m": 5,
+        "minimo": 0.5
+      }
     },
     {
       "id": "quemaAC",
@@ -423,7 +427,11 @@
           "zafra",
           "Zafra"
         ]
-      ]
+      ],
+      "sobre": {
+        "tolerancia_m": 5,
+        "minimo": 0.5
+      }
     },
     {
       "id": "quemaPV",
@@ -477,7 +485,11 @@
           "zafra",
           "Zafra"
         ]
-      ]
+      ],
+      "sobre": {
+        "tolerancia_m": 5,
+        "minimo": 0.5
+      }
     },
     {
       "id": "aa",
@@ -499,7 +511,11 @@
           "departamen",
           "Departamento"
         ]
-      ]
+      ],
+      "sobre": {
+        "tolerancia_m": 5,
+        "minimo": 0.5
+      }
     }
   ]
 }

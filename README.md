@@ -118,3 +118,11 @@ El programa de corte vive en la hoja **`Programa de Corte`** de `Archivo_Maestro
 
 - Cada cuadro muestra su área en hectáreas como etiqueta (capa **Hectáreas de cada cuadro** del panel *Capas*; se guarda por usuario). Se dibujan en un lienzo propio (`core.js`, `dibujarEtiquetas`) entre las líneas y los íconos, con el punto de etiqueta siempre *dentro* del cuadro (también si es cóncavo), y se omiten las que no caben a ese zoom.
 - Al pasar el cursor sobre un plantío (computadora) se ve su nota: código, nombre, área total, TCH, TM, frente, semana, secuencia y fecha de corte.
+
+## App instalable (PWA), uso sin conexión y APK
+
+- **Service worker** (`visor_src/pwa/sw.template.js` → `docs/sw.js`): guarda la app en el teléfono y la abre al instante con o sin señal, también al refrescar. Se actualiza solo en cada versión (el nombre de su caché lleva la versión de la app). Los datos de GitHub y el servidor de Google no pasan por él: la app los guarda por su cuenta.
+- **Arranque sin esperas** (`scripts/construir_visor.py`): si ya hay datos guardados se abre con ellos de inmediato; los nuevos se bajan en segundo plano. En modo avión no espera a la red; con señal mala espera como máximo 6-8 s.
+- **Manifiesto, íconos y capturas** (`visor_src/pwa/`): se copian a `docs/` en cada compilación. Los íconos se generan con `scripts/generar_iconos.py`.
+- **Publicación en Firebase Hosting:** `firebase.json` publica la carpeta `docs/` (con las cabeceras de caché correctas) y `.firebaserc` guarda el ID del proyecto. El flujo `.github/workflows/firebase-hosting.yml` publica automáticamente cuando cambia `docs/` y cuando termina *Actualizar datos del visor*; necesita el secreto `FIREBASE_SERVICE_ACCOUNT`. A mano: `firebase deploy --only hosting`.
+- **APK con PWABuilder:** ver `LEEME_APK_PWABuilder.md` (entregada aparte). Para que el APK se abra sin la barra del navegador, la huella de su llave de firma va en **`docs/.well-known/assetlinks.json`**; el compilador crea ese archivo con textos de ejemplo solo si no existe y **nunca lo sobrescribe**.

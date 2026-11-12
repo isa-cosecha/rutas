@@ -25,7 +25,8 @@ const esc = s => String(s == null ? '' : s).replace(/[&<>"']/g, c => ({'&': '&am
 const uuid = () => 'uuid:' + (crypto.randomUUID ? crypto.randomUUID() : 'xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx'.replace(/[xy]/g, c => { const r = Math.random() * 16 | 0; return (c === 'x' ? r : (r & 3 | 8)).toString(16); }));
 const LS = {get(k, d) { try { const v = localStorage.getItem('ff_' + k); return v == null ? d : JSON.parse(v); } catch { return d; } }, set(k, v) { try { localStorage.setItem('ff_' + k, JSON.stringify(v)); } catch {} }, del(k) { try { localStorage.removeItem('ff_' + k); } catch {} }};
 const fmt = n => (Math.round(n * 10) / 10).toLocaleString('es-NI');
-function toast(m, ms = 3200) { const t = $('#toast'); t.textContent = m; t.classList.add('on'); clearTimeout(toast.t); toast.t = setTimeout(() => t.classList.remove('on'), ms); }
+function toast(m, ms = 3200) { if (!ROOT) { if (typeof UI !== 'undefined') UI.toast(m, ms); return; }   // pantalla de formularios aún no abierta (p. ej. envío en segundo plano tras refrescar): se usa el aviso del mapa
+  const t = $('#toast'); t.textContent = m; t.classList.add('on'); clearTimeout(toast.t); toast.t = setTimeout(() => t.classList.remove('on'), ms); }
 const S = {formularios: [], pre: null, mae: null, odo: {}, cfg: {}, hoy: null, cola: LS.get('cola', []), hist: LS.get('hist', []), vista: 'combustible', enviando: false, online: navigator.onLine, plantios: {}, mensajeRed: ''};
 
 /* fecha/turno/zafra por defecto */
@@ -91,7 +92,7 @@ async function sincronizar() {
       if (enviados) toast(`✓ ${enviados} registro${enviados > 1 ? 's' : ''} enviado${enviados > 1 ? 's' : ''}`);
       if (!lote.some(i => i.estado === 'pendiente') && !j.resultados.length) break;
     }
-  } finally { S.enviando = false; pintarBadges(); if (S.vista === 'pendientes') pintarVista(); }
+  } finally { S.enviando = false; pintarBadges(); if (ROOT && S.vista === 'pendientes') pintarVista(); }
 }
 setInterval(() => { if (A.auth.logged() && S.cola.some(i => i.estado === 'pendiente')) sincronizar(); }, 45000);
 function resumen(m, d) {

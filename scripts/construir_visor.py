@@ -52,9 +52,16 @@ BOOT = r'''
   let saved = {}; try { saved = JSON.parse(localStorage.getItem('rp26_cfg') || '{}'); } catch {}
   const cfg = {data: saved.data || CONFIG.data, gh: saved.gh || ''};
   const say = (m, p) => { $('bootMsg').textContent = m; if (p != null) $('bootBar').style.width = Math.min(100, p) + '%'; };
+  // ---- app instalable: el service worker guarda la app en el teléfono para abrirla SIN conexión (también al refrescar) ----
+  if ('serviceWorker' in navigator && /^https?:$/.test(location.protocol)) {
+    const teniaControl = !!navigator.serviceWorker.controller;
+    navigator.serviceWorker.register('sw.js').catch(() => {});
+    navigator.serviceWorker.addEventListener('controllerchange', () => { if (teniaControl && typeof UI !== 'undefined') UI.toast('Hay una versión nueva de la app. Se aplicará al volver a abrirla.', 9000); });
+  }
   // ---- IndexedDB (caché de datos para uso sin conexión) ----
-  const idb = () => new Promise((ok, ko) => { try { const r = indexedDB.open('rp26', 1); r.onupgradeneeded = () => r.result.createObjectStore('kv');
-    r.onsuccess = () => ok(r.result); r.onerror = () => ko(r.error); } catch (e) { ko(e); } });
+  const idb = () => new Promise((ok, ko) => { const t = setTimeout(() => ko(new Error('IndexedDB no responde')), 5000);   // si el almacenamiento local no responde, la app arranca igual (sin caché)
+    try { const r = indexedDB.open('rp26', 1); r.onupgradeneeded = () => r.result.createObjectStore('kv');
+    r.onsuccess = () => { clearTimeout(t); ok(r.result); }; r.onerror = () => { clearTimeout(t); ko(r.error); }; r.onblocked = () => { clearTimeout(t); ko(new Error('IndexedDB bloqueada')); }; } catch (e) { clearTimeout(t); ko(e); } });
   const idbGet = async k => { try { const db = await idb(); return await new Promise(ok => { const q = db.transaction('kv').objectStore('kv').get(k); q.onsuccess = () => ok(q.result); q.onerror = () => ok(null); }); } catch { return null; } };
   const idbPut = async (k, v) => { try { const db = await idb(); await new Promise(ok => { const t = db.transaction('kv', 'readwrite'); t.objectStore('kv').put(v, k); t.oncomplete = t.onerror = () => ok(); }); } catch {} };
   // ---- origen: raw.githubusercontent (público) o API de GitHub con token (privado) ----
@@ -82,8 +89,9 @@ BOOT = r'''
     if (!meta) return cached ? cached.text : null;            // sin conexión: última copia guardada
     if (!meta.capas) return null;                             // el repositorio no publica capas
     if (cached && cached.version === meta.capas.version && !forzar) return cached.text;
-    try { say('Descargando capas de apoyo…', 97); const t = await get('capas.json', meta.capas.version, 120000, 0); JSON.parse(t);
-      await idbPut('capas', {version: meta.capas.version, text: t}); return t; }
+    const bajar = (async () => { const t = await get('capas.json', meta.capas.version, 120000, 0); JSON.parse(t); await idbPut('capas', {version: meta.capas.version, text: t}); return t; })();
+    if (cached && !forzar) { bajar.catch(() => {}); return cached.text; }   // ya hay copia: se abre con ella y la nueva queda lista para la próxima vez
+    try { say('Descargando capas de apoyo…', 97); return await bajar; }
     catch (e) { return cached ? cached.text : null; }
   }
   async function start(text, meta, ctext) {
@@ -107,7 +115,7 @@ BOOT = r'''
   }
   function fail(err, cached) {
     $('bootFail').hidden = false; $('bootUrl').value = cfg.data || ''; $('bootGh').value = cfg.gh || '';
-    say(cfg.data ? `No se pudieron descargar los datos (${err && err.message || err}).` : 'Falta configurar la URL de datos en GitHub.', 0);
+    say(navigator.onLine === false ? 'Sin conexión y todavía no hay datos guardados en este teléfono. Abre la app una vez con internet y después funcionará sin señal.' : cfg.data ? `No se pudieron descargar los datos (${err && err.message || err}).` : 'Falta configurar la URL de datos en GitHub.', 0);
     $('bootRetry').onclick = () => { cfg.data = $('bootUrl').value.trim(); cfg.gh = $('bootGh').value.trim();
       try { localStorage.setItem('rp26_cfg', JSON.stringify({...saved, data: cfg.data, gh: cfg.gh})); } catch {} location.reload(); };
     $('bootFile').onchange = async e => { const f = e.target.files[0]; if (!f) return; const t = await f.text();
@@ -119,15 +127,20 @@ BOOT = r'''
     let force = false; try { force = sessionStorage.getItem('rp26_force') === '1'; sessionStorage.removeItem('rp26_force'); } catch {}
     say('Revisando versión de los datos…', 4);
     const cached = await idbGet('datos');
+    const enLinea = navigator.onLine !== false;          // en modo avión no se espera a la red: se abre de una vez con lo guardado
     let meta = null, err = null;
-    if (cfg.data) { try { meta = JSON.parse(await get('manifest.json', Date.now(), 10000)); } catch (e) { err = e; } }
+    if (cfg.data && enLinea) { try { meta = JSON.parse(await get('manifest.json', Date.now(), cached ? 6000 : 15000)); } catch (e) { err = e; } }
     if (meta && cached && cached.meta.version === meta.version && !force)
       return start(cached.text, {...meta, origen: 'caché del navegador (al día con GitHub)'}, await loadCapas(meta, force));
     if (meta) {
-      try { const t = await get('rutas.json', meta.version, 180000, meta.bytes); JSON.parse(t);
-        await idbPut('datos', {meta, text: t});
-        return start(t, {...meta, origen: 'descargado de GitHub', aviso: cached ? `Datos actualizados a la versión ${meta.version}` : ''}, await loadCapas(meta, force));
-      } catch (e) { err = e; }
+      const bajar = (async () => { const t = await get('rutas.json', meta.version, 180000, meta.bytes); JSON.parse(t); await idbPut('datos', {meta, text: t}); return t; })();
+      if (cached && !force) {   // ya hay copia guardada: no se deja a la persona esperando una descarga lenta
+        const r = await Promise.race([bajar.then(t => ({t})).catch(e => ({e})), new Promise(ok => setTimeout(() => ok({tarde: true}), 8000))]);
+        if (r.t) return start(r.t, {...meta, origen: 'descargado de GitHub', aviso: `Datos actualizados a la versión ${meta.version}`}, await loadCapas(meta, force));
+        bajar.then(() => { if (typeof UI !== 'undefined') UI.toast('Se descargaron datos nuevos. Se aplicarán al volver a abrir la app.', 9000); }).catch(() => {});
+        return start(cached.text, {...cached.meta, origen: 'caché del navegador (descargando datos nuevos)', aviso: r.tarde ? 'Conexión lenta: se abrió con los datos guardados; los nuevos se descargan en segundo plano.' : ''}, await loadCapas(null));
+      }
+      try { const t = await bajar; return start(t, {...meta, origen: 'descargado de GitHub', aviso: ''}, await loadCapas(meta, force)); } catch (e) { err = e; }
     }
     if (cached) return start(cached.text, {...cached.meta, origen: 'caché del navegador (sin conexión)',
       aviso: `Sin conexión con GitHub: usando datos guardados del ${String(cached.meta.generado || '').slice(0, 10)}`}, await loadCapas(null));
@@ -142,6 +155,7 @@ html = f'''<!doctype html>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
 <meta name="theme-color" content="#1d2b22"><meta name="mobile-web-app-capable" content="yes"><meta name="apple-mobile-web-app-capable" content="yes">
+<link rel="manifest" href="manifest.webmanifest"><link rel="icon" type="image/png" href="icons/icon-192.png"><link rel="apple-touch-icon" href="icons/apple-touch-icon.png">
 <title>Rutas por plantío · Programa de Corte 2026-2027</title>
 <style>{fonts}</style>
 <style>{lcss}</style>
@@ -199,3 +213,14 @@ base = a.base or (f'https://raw.githubusercontent.com/{a.repo}/{a.rama}/' if a.r
 LAUNCHER = open(S('lanzador.html'), encoding='utf-8').read().replace('__BASE__', base)
 open(os.path.join(carpeta, 'lanzador.html'), 'w', encoding='utf-8').write(LAUNCHER)
 print('lanzador', round(len(LAUNCHER.encode()) / 1e3, 1), 'KB · visor versión', ver, '· base:', base)
+
+# ---------- PWA: manifiesto, service worker, íconos y página sin conexión (para instalar la app y generar el APK) ----------
+import shutil
+shutil.copytree(S('pwa', 'icons'), os.path.join(carpeta, 'icons'), dirs_exist_ok=True)
+if os.path.isdir(S('pwa', 'screenshots')): shutil.copytree(S('pwa', 'screenshots'), os.path.join(carpeta, 'screenshots'), dirs_exist_ok=True)
+for f in ('manifest.webmanifest', 'offline.html'): shutil.copy(S('pwa', f), os.path.join(carpeta, f))
+open(os.path.join(carpeta, 'sw.js'), 'w', encoding='utf-8').write(open(S('pwa', 'sw.template.js'), encoding='utf-8').read().replace('__VERSION__', ver))
+# assetlinks.json (confirma que el APK es dueño del dominio): se crea con textos de ejemplo SOLO si no existe; nunca se pisa el que ya tiene la huella real.
+wk = os.path.join(carpeta, '.well-known'); os.makedirs(wk, exist_ok=True)
+if not os.path.exists(os.path.join(wk, 'assetlinks.json')): shutil.copy(S('pwa', 'assetlinks.template.json'), os.path.join(wk, 'assetlinks.json'))
+print('pwa: manifest, sw.js (versión', ver + '), íconos y .well-known/assetlinks.json en', carpeta)

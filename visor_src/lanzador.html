@@ -66,11 +66,14 @@ button{background:var(--amber);color:#2a1d00;border:0;border-radius:6px;padding:
     say('Buscando la versión más reciente del visor…', 5);
     const cached = await gget('visor');
     let meta = null, err = null;
-    try { meta = JSON.parse(await get('docs/visor.json', Date.now(), 10000)); } catch (e) { err = e; }
+    if (navigator.onLine !== false) { try { meta = JSON.parse(await get('docs/visor.json', Date.now(), cached ? 6000 : 10000)); } catch (e) { err = e; } }   // en modo avión no se espera a la red
     if (meta && cached && cached.v === meta.version && !force) return run(cached.html);
-    if (meta) { try { const html = await get('docs/index.html', meta.version, 120000, meta.bytes);
-        if (!/<html/i.test(html)) throw new Error('respuesta inesperada'); await gput('visor', {v: meta.version, html}); return run(html);
-      } catch (e) { err = e; } }
+    if (meta) {
+      const bajar = (async () => { const html = await get('docs/index.html', meta.version, 120000, meta.bytes);
+        if (!/<html/i.test(html)) throw new Error('respuesta inesperada'); await gput('visor', {v: meta.version, html}); return html; })();
+      if (cached && !force) { const r = await Promise.race([bajar.then(h => ({h})).catch(e => ({e})), new Promise(ok => setTimeout(() => ok({tarde: 1}), 8000))]); return run(r.h || cached.html); }   // con copia guardada no se espera una descarga lenta
+      try { return run(await bajar); } catch (e) { err = e; }
+    }
     if (cached) return run(cached.html);   // sin conexión: última copia guardada
     fail(err);
   })();

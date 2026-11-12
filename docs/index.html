@@ -1021,7 +1021,7 @@ App = (() => {
 
   // ---------- programa de corte leído de Google Sheets (hoja "Programa de Corte" de Archivo_Maestros) ----------
   // Los datos del programa (frente, fecha, semana, secuencia, ha, toneladas…) se toman de la hoja; el repositorio sólo aporta la geometría y las rutas.
-  let PROG = {zafra: '', borrador: '', version: '', total: 0, enMapa: 0, sinMapa: [], fuera: 0, origen: 'repositorio', t: null};
+  let PROG = {zafra: '', borrador: '', version: '', total: 0, enMapa: 0, sinMapa: [], fuera: 0, origen: 'repositorio', t: null}, PROG_DOC = null;
   const PROG_CAMPOS = ['nm', 'var', 'nc', 'ha', 'tm', 'est', 'fc', 'fr', 'sem', 'sec', 'reg', 'ten', 'mun', 'tc', 'car', 'ubi', 'mul', 'dkm', 'dkmm'];
   const ordenPrograma = (a, b) => String(a.fr || '').localeCompare(String(b.fr || '')) || (a.sem || 0) - (b.sem || 0) || (a.sec || 0) - (b.sec || 0) || a.id.localeCompare(b.id);   // el mismo orden que ya tenía la lista
   function aplicarPrograma(doc, origen) {
@@ -1038,6 +1038,7 @@ App = (() => {
     });
     const ids = new Set(D.map(o => o.id));
     D.sort(ordenPrograma);
+    PROG_DOC = doc;   // las filas del programa quedan en memoria: el formulario ATS las usa para listar los plantíos sin llamar al servidor
     PROG = {zafra: doc.zafra, borrador: doc.borrador || '', version: doc.version || '', total: doc.rows.length, enMapa: n, sinMapa: doc.rows.filter(r => !ids.has(r.id)).map(r => r.id), fuera: D.filter(o => o.fuera).length, origen: origen || 'google', t: Date.now()};
     return true;
   }
@@ -1253,6 +1254,11 @@ App = (() => {
     let s = 90, w = 180, n = -90, e = -180; r.forEach(([y, x]) => { if (y < s) s = y; if (y > n) n = y; if (x < w) w = x; if (x > e) e = x; });
     return (k[i] = {p: puntoEtiqueta(r), b: [s, w, n, e]});
   }
+  const esMovil = () => document.documentElement.dataset.ui === 'movil' || (!document.documentElement.dataset.ui && L.Browser.mobile);
+  // El plantío seleccionado resalta (amarillo, negrita, grande); los demás son discretos: pequeños, delgados y translúcidos.
+  const estiloEtq = sel => sel
+    ? {fs: 12.5, peso: 700, relleno: '#ffe14d', halo: 'rgba(8,18,12,.88)', ancho: 3.4}
+    : {fs: esMovil() ? 8.5 : 9.5, peso: 500, relleno: 'rgba(255,255,255,.7)', halo: 'rgba(8,18,12,.5)', ancho: 2.2};
   function dibujarEtiquetas() {
     ETQ.raf = 0; const cv = ETQ.cv; if (!cv || !map) return;
     const tam = map.getSize(), dpr = window.devicePixelRatio || 1; ETQ.ultimo = [];
@@ -1263,21 +1269,33 @@ App = (() => {
     const bd = map.getBounds().pad(.05), S = bd.getSouth(), N = bd.getNorth(), W = bd.getWest(), E = bd.getEast();
     const filt = hasFilters() ? new Set(filtered.map(o => o.id)) : null;
     c.textAlign = 'center'; c.textBaseline = 'middle'; c.lineJoin = 'round';
-    let n = 0;
+    // 1) candidatos: cuadros visibles cuya etiqueta cabe dentro del cuadro
+    const cand = [];
     for (const o of D) {
       if (!o._bb || o._bb[2] < S || o._bb[0] > N || o._bb[3] < W || o._bb[1] > E) continue;
       const esSel = !!cur && cur.id === o.id; if (filt && !filt.has(o.id) && !esSel) continue;   // con filtros activos, sólo los plantíos filtrados
+      const est = estiloEtq(esSel); c.font = `${est.peso} ${est.fs}px Barlow, system-ui, sans-serif`;
       for (let i = 0; i < o.pol.length; i++) {
         const t = etiquetaDe(o, i); if (!t) continue;
         const [s2, w2, n2, e2] = t.b; if (n2 < S || s2 > N || e2 < W || w2 > E) continue;
-        const a = map.latLngToContainerPoint([s2, w2]), b = map.latLngToContainerPoint([n2, e2]), txt = Number(o.pol[i].ha).toFixed(2), fs = esSel ? 12.5 : 11;
-        c.font = `${esSel ? 700 : 600} ${fs}px Barlow, system-ui, sans-serif`;
-        if (Math.abs(b.x - a.x) < c.measureText(txt).width + 8 || Math.abs(a.y - b.y) < fs + 6) continue;   // cuadro demasiado pequeño para su etiqueta a este zoom
-        const p = map.latLngToContainerPoint(t.p);
-        c.lineWidth = 3.4; c.strokeStyle = 'rgba(8,18,12,.88)'; c.strokeText(txt, p.x, p.y); c.fillStyle = esSel ? '#ffe14d' : '#ffffff'; c.fillText(txt, p.x, p.y);
-        ETQ.ultimo.push({id: o.id, q: o.pol[i].q, txt, x: Math.round(p.x), y: Math.round(p.y)});
-        if (++n >= 900) return;
+        const a = map.latLngToContainerPoint([s2, w2]), b = map.latLngToContainerPoint([n2, e2]), txt = Number(o.pol[i].ha).toFixed(2), tw = c.measureText(txt).width;
+        if (Math.abs(b.x - a.x) < tw + 8 || Math.abs(a.y - b.y) < est.fs + 6) continue;   // cuadro demasiado pequeño para su etiqueta a este zoom
+        const p = map.latLngToContainerPoint(t.p); cand.push({o, i, sel: esSel, est, txt, tw, x: p.x, y: p.y, ha: Number(o.pol[i].ha) || 0});
       }
+    }
+    // 2) primero las del plantío seleccionado; luego las demás, de mayor a menor cuadro; una etiqueta que se encima con otra ya puesta se omite
+    cand.sort((a, b) => (b.sel - a.sel) || (b.ha - a.ha));
+    const CEL = 48, rej = new Map();
+    const choca = r => { for (let gx = Math.floor(r[0] / CEL); gx <= Math.floor(r[2] / CEL); gx++) for (let gy = Math.floor(r[1] / CEL); gy <= Math.floor(r[3] / CEL); gy++) { const l = rej.get(gx + ',' + gy); if (l) for (const q of l) if (!(r[2] < q[0] || r[0] > q[2] || r[3] < q[1] || r[1] > q[3])) return true; } return false; };
+    const marca = r => { for (let gx = Math.floor(r[0] / CEL); gx <= Math.floor(r[2] / CEL); gx++) for (let gy = Math.floor(r[1] / CEL); gy <= Math.floor(r[3] / CEL); gy++) { const k = gx + ',' + gy; (rej.get(k) || rej.set(k, []).get(k)).push(r); } };
+    let n = 0;
+    for (const e of cand) {
+      const r = [e.x - e.tw / 2 - 2, e.y - e.est.fs / 2 - 1, e.x + e.tw / 2 + 2, e.y + e.est.fs / 2 + 1];
+      if (!e.sel && choca(r)) continue; marca(r);
+      c.font = `${e.est.peso} ${e.est.fs}px Barlow, system-ui, sans-serif`;
+      c.lineWidth = e.est.ancho; c.strokeStyle = e.est.halo; c.strokeText(e.txt, e.x, e.y); c.fillStyle = e.est.relleno; c.fillText(e.txt, e.x, e.y);
+      ETQ.ultimo.push({id: e.o.id, q: e.o.pol[e.i].q, txt: e.txt, x: Math.round(e.x), y: Math.round(e.y), sel: e.sel, fs: e.est.fs, r});
+      if (++n >= 900) return;
     }
   }
   const pedirEtiquetas = () => { if (!ETQ.raf) ETQ.raf = requestAnimationFrame(dibujarEtiquetas); };
@@ -1459,12 +1477,13 @@ App = (() => {
   }
   async function refreshStatus() {
     if (!cfg.url || !logged()) return;
+    cargarPrograma();   // en paralelo con la sincronización (antes esperaba a que ella terminara)
     try {
       const j = await api('sync');
       if (j.ok) {
         remote = {}; Object.entries(j.status || {}).forEach(([k, v]) => remote[String(k).padStart(5, '0')] = v);
         if (j.rol && (sess.rol !== j.rol || sess.nombre !== j.nombre || JSON.stringify(sess.permisos) !== JSON.stringify(j.permisos))) { setSess({...sess, rol: j.rol, nombre: j.nombre, ficha: j.ficha || '', permisos: j.permisos}); emit('perfil', sess); }
-        applyPrefs(j.prefs); emit('status'); cargarPrograma();
+        applyPrefs(j.prefs); emit('status');
       }
     } catch {}
   }
@@ -1606,7 +1625,7 @@ App = (() => {
 
   return {META: META || {}, D, byId, F, CAT, PCAT, FLAGS, vis, cfg, esc, fmt, init: initMap, select, step, fitLocal, fitAll, applyFilters, options, csv, flush, refreshStatus,
     saveCfg, locate, on, savePrefs, hasFilters, clearFilters, CAPS, capasCerca, setCapas, cercaCapa, _t: {fraccionSobre, distPlantio, capaBBox, reglaSobre, tipPlantio, get etiquetas() { return ETQ.ultimo; }, dibujarEtiquetas}, valOf, valTag, srcTag, htmlKpis, htmlDetail, htmlPanelCapas, bindCapas, htmlForm, bind, kmFlag,
-    cargarPrograma, get programa() { return PROG; },
+    cargarPrograma, get programa() { return PROG; }, get programaDoc() { return PROG_DOC; },
     auth: {logged, login, logout, changePassword, get sess() { return sess; }, puede, canSubmit: () => puede('responder')},
     api: (accion, datos) => api(accion, datos || {}, true),
     get filtered() { return filtered; }, get cur() { return cur; }, get queueLen() { return queue.length; }, get map() { return map; }};
@@ -2258,7 +2277,7 @@ const LS = {get(k, d) { try { const v = localStorage.getItem('ff_' + k); return 
 const fmt = n => (Math.round(n * 10) / 10).toLocaleString('es-NI');
 function toast(m, ms = 3200) { if (!ROOT) { if (typeof UI !== 'undefined') UI.toast(m, ms); return; }   // pantalla de formularios aún no abierta (p. ej. envío en segundo plano tras refrescar): se usa el aviso del mapa
   const t = $('#toast'); t.textContent = m; t.classList.add('on'); clearTimeout(toast.t); toast.t = setTimeout(() => t.classList.remove('on'), ms); }
-const S = {formularios: [], pre: null, mae: null, odo: {}, cfg: {}, hoy: null, cola: LS.get('cola', []), hist: LS.get('hist', []), vista: 'combustible', enviando: false, online: navigator.onLine, plantios: {}, mensajeRed: ''};
+const S = {formularios: [], pre: null, mae: null, odo: {}, cfg: {}, hoy: null, cola: LS.get('cola', []), hist: LS.get('hist', []), vista: 'combustible', enviando: false, online: navigator.onLine, plantios: {}, mensajeRed: '', odoLocal: {}, maeProm: null};
 
 /* fecha/turno/zafra por defecto */
 function turnoActual() { const h = new Date().getHours(); return (h >= 6 && h < 18) ? 'Dia' : 'Noche'; }
@@ -2275,23 +2294,51 @@ window.addEventListener('offline', () => marcarRed(false));
 document.addEventListener('visibilitychange', () => { if (!document.hidden && A.auth.logged()) sincronizar(); });
 
 /* ======================================================================== MAESTROS */
-async function cargarMaestros() {
-  const c = LS.get('mae', null);
-  if (c && !S.mae) { S.mae = c.mae; S.odo = Object.assign({}, c.odo, S.odo); S.cfg = c.cfg; S.hoy = c.hoy; S.maeT = c.t; }
-  if (!A.auth.logged() || !navigator.onLine) return;
-  try {
-    const j = await api('form_maestros');
-    if (!j.ok) return;
-    marcarRed(true); S.mae = j.maestros; S.odo = Object.assign({}, j.odometros); S.cfg = j.config; S.hoy = j.hoy; S.maeT = Date.now();
-    LS.set('mae', {mae: S.mae, odo: S.odo, cfg: S.cfg, hoy: S.hoy, t: S.maeT});
-    const hoyDisp = ymd(new Date()); if (S.hoy && Math.abs((new Date(hoyDisp) - new Date(S.hoy)) / 86400000) >= 1) toast('⚠ La fecha de este teléfono (' + hoyDisp + ') no coincide con la del servidor (' + S.hoy + '). Revísala.', 7000);
-    if (ROOT) pintarTabs();   // no se redibuja el formulario: se borraría lo que la persona está escribiendo
-  } catch (e) { marcarRed(false); }
+const MAE_FRESCO_MS = 10 * 60 * 1000;   // los catálogos guardados se consideran al día durante 10 minutos
+/** Aplica los catálogos guardados en el teléfono (sin red). Devuelve true si había. */
+function leerCacheMae() {
+  if (S.mae) return true;
+  const c = LS.get('mae', null); if (!c) return false;
+  S.mae = c.mae; S.odo = Object.assign({}, c.odo, S.odo); S.cfg = c.cfg; S.hoy = c.hoy; S.maeT = c.t; return true;
 }
+/** Un odómetro guardado en este teléfono y todavía sin enviar manda sobre lo que diga el servidor (que aún no lo conoce). */
+function mezclarOdo(servidor) {
+  const o = Object.assign({}, servidor);
+  Object.keys(S.odoLocal).forEach(k => { const l = S.odoLocal[k]; if (S.cola.some(x => x.id === l.id)) o[k] = l.v; else delete S.odoLocal[k]; });
+  return o;
+}
+const zafraCalendario = f => { const [y, m] = f.split('-').map(Number), a = m >= 10 ? y : y - 1; return `${a}-${a + 1}`; };
+/** Catálogos (y plantíos de la zafra) desde el servidor. Una sola consulta a la vez; si lo guardado es reciente no se consulta. */
+function cargarMaestros(forzar) {
+  leerCacheMae();
+  if (!A.auth.logged() || !navigator.onLine) return Promise.resolve();
+  if (S.mae && !forzar && Date.now() - (S.maeT || 0) < MAE_FRESCO_MS) return Promise.resolve();
+  if (S.maeProm) return S.maeProm;
+  S.maeProm = (async () => {
+    try {
+      const j = await api('form_maestros', {zafra: zafraCalendario(ymd(new Date()))});
+      if (!j.ok) return;
+      marcarRed(true); S.mae = j.maestros; S.odo = mezclarOdo(j.odometros); S.cfg = j.config; S.hoy = j.hoy; S.maeT = Date.now();
+      LS.set('mae', {mae: S.mae, odo: S.odo, cfg: S.cfg, hoy: S.hoy, t: S.maeT});
+      if (j.plantios && j.zafra && !plantiosDelPrograma(j.zafra)) { S.plantios[j.zafra] = j.plantios; LS.set('plan_' + j.zafra, j.plantios); }   // vienen en la misma respuesta
+      const hoyDisp = ymd(new Date()); if (S.hoy && Math.abs((new Date(hoyDisp) - new Date(S.hoy)) / 86400000) >= 1) toast('⚠ La fecha de este teléfono (' + hoyDisp + ') no coincide con la del servidor (' + S.hoy + '). Revísala.', 7000);
+      if (ROOT) pintarTabs();   // no se redibuja el formulario: se borraría lo que la persona está escribiendo
+    } catch (e) { marcarRed(false); } finally { S.maeProm = null; }
+  })();
+  return S.maeProm;
+}
+/** Plantíos de la zafra tomados del programa de corte que el mapa ya tiene en el teléfono (sin llamar al servidor). */
+function plantiosDelPrograma(zafra) {
+  const d = A.programaDoc; if (!d || d.zafra !== zafra || !d.rows || !d.rows.length) return null;
+  return d.rows.map(r => [r.id, r.nm || '', r.var || '', r.fr || '', r.sem == null ? '' : r.sem, r.fc || '', r.sec == null ? '' : r.sec, r.ha == null ? '' : r.ha]);
+}
+async function actualizarPlantios(zafra) { try { const j = await api('form_plantios', {zafra}); if (j.ok) { S.plantios[zafra] = j.plantios; LS.set('plan_' + zafra, j.plantios); } } catch (e) {} }
 async function plantiosDe(zafra) {
+  const p = plantiosDelPrograma(zafra); if (p) { S.plantios[zafra] = p; return p; }
   if (S.plantios[zafra]) return S.plantios[zafra];
-  const c = LS.get('plan_' + zafra, null); if (c) S.plantios[zafra] = c;
-  if (navigator.onLine && A.auth.logged()) { try { const j = await api('form_plantios', {zafra}); if (j.ok) { S.plantios[zafra] = j.plantios; LS.set('plan_' + zafra, j.plantios); } } catch (e) {} }
+  const c = LS.get('plan_' + zafra, null);
+  if (c) { S.plantios[zafra] = c; if (navigator.onLine && A.auth.logged()) actualizarPlantios(zafra); return c; }   // se muestra lo guardado y se refresca en segundo plano
+  if (navigator.onLine && A.auth.logged()) await actualizarPlantios(zafra);
   return S.plantios[zafra] || [];
 }
 
@@ -2312,14 +2359,14 @@ async function sincronizar() {
       try { j = await api('form_enviar', {items: lote.map(i => ({id: i.id, modulo: i.modulo, datos: i.datos, forzar: !!i.forzar}))}); marcarRed(true); }
       catch (e) { marcarRed(navigator.onLine && false); break; }                    // sin señal: se reintenta solo
       if (!j.ok) { if (j.code === 'sesion') break; lote.forEach(i => { i.estado = 'error'; i.error = j.error || 'Error del servidor'; }); guardarCola(); break; }
-      let enviados = 0;
+      let enviados = 0, odoNuevo = false;
       j.resultados.forEach(r => {
         const it = S.cola.find(x => x.id === r.id); if (!it) return;
-        if (r.ok) { S.cola = S.cola.filter(x => x.id !== r.id); enviados++; if (!r.duplicado || !S.hist.some(h => h.id === r.id)) { S.hist.unshift({id: r.id, t: new Date().toISOString(), modulo: it.modulo, resumen: resumen(it.modulo, it.datos), fila: r.fila || null, uid: it.uid}); S.hist = S.hist.slice(0, 40); LS.set('hist', S.hist); } }
+        if (r.ok) { S.cola = S.cola.filter(x => x.id !== r.id); enviados++; if (it.modulo === 'motos' || it.modulo === 'combustible') odoNuevo = true; if (!r.duplicado || !S.hist.some(h => h.id === r.id)) { S.hist.unshift({id: r.id, t: new Date().toISOString(), modulo: it.modulo, resumen: resumen(it.modulo, it.datos), fila: r.fila || null, uid: it.uid}); S.hist = S.hist.slice(0, 40); LS.set('hist', S.hist); } }
         else if (r.codigo === 'repetido') { it.estado = 'repetido'; it.error = r.error; }
         else { it.estado = 'error'; it.error = r.error; it.codigo = r.codigo; }
       });
-      guardarCola();
+      guardarCola(); if (odoNuevo) cargarMaestros(true);   // el servidor ya conoce el odómetro nuevo: se refresca la sugerencia en segundo plano
       if (enviados) toast(`✓ ${enviados} registro${enviados > 1 ? 's' : ''} enviado${enviados > 1 ? 's' : ''}`);
       if (!lote.some(i => i.estado === 'pendiente') && !j.resultados.length) break;
     }
@@ -2436,8 +2483,8 @@ FORM.combustible = {
     mk(g('litros'), !(lit > 0), 'Escribe los litros.');
     if (er.length) return listaErrores(root, er);
     if (av.length && !await confirmar('Revisa estos datos', av)) return;
-    encolar('combustible', d); guardarUlt('combustible', {tipo, cisterna: d.cisterna});
-    if (tipo === 'moto' && d.odometro) S.odo[d.motor] = d.odometro;
+    const itC = encolar('combustible', d); guardarUlt('combustible', {tipo, cisterna: d.cisterna});
+    if (tipo === 'moto' && d.odometro) { S.odo[d.motor] = d.odometro; S.odoLocal[d.motor] = {v: d.odometro, id: itC.id}; }
     toast('Guardado ✓ ' + (S.online ? 'enviando…' : 'se enviará al volver la señal')); pintarVista(true);
   }
 };
@@ -2479,7 +2526,7 @@ FORM.motos = {
     const rec = of - oi; if (rec > AVISOS.recorridoMax) av.push(`Un recorrido de ${fmt(rec)} km es muy grande (lo normal es menos de ${AVISOS.recorridoMax}).`);
     const u = S.odo[d.equipo]; if (u && Math.abs(oi - u) > 1) av.push(`El odómetro inicial (${oi}) no coincide con el último registrado de esta moto (${u}).`);
     if (av.length && !await confirmar('Revisa estos datos', av)) return;
-    encolar('motos', d); guardarUlt('motos', {equipo: d.equipo}); S.odo[d.equipo] = of; toast('Guardado ✓ ' + (S.online ? 'enviando…' : 'se enviará al volver la señal')); pintarVista(true);
+    const itM = encolar('motos', d); guardarUlt('motos', {equipo: d.equipo}); S.odo[d.equipo] = of; S.odoLocal[d.equipo] = {v: of, id: itM.id}; toast('Guardado ✓ ' + (S.online ? 'enviando…' : 'se enviará al volver la señal')); pintarVista(true);
   }
 };
 
@@ -2687,7 +2734,10 @@ async function abrir(mod, pre) {
   HOST.dataset.modo = document.documentElement.dataset.ui === 'movil' || (!document.documentElement.dataset.ui && innerWidth <= 820) ? 'movil' : 'web';   // la misma versión (web/móvil) que eligió el mapa
   HOST.classList.add('on'); S.pre = pre || null;
   const ms = modulosPermitidos(); S.vista = (mod && ms.includes(mod)) ? mod : (ms.includes(S.vista) || S.vista === 'pendientes' ? S.vista : (ms[0] || 'pendientes'));
-  marcarRed(navigator.onLine); pintarBadges(); await cargarMaestros(); await pintarVista(); sincronizar();
+  marcarRed(navigator.onLine); pintarBadges();
+  if (!leerCacheMae()) { $('#vista').innerHTML = '<div class="card"><div class="cuerpo"><b>Cargando catálogos…</b><div class="ayuda" style="margin-top:6px">Solo la primera vez en este teléfono. Después se abren al instante, incluso sin señal.</div></div></div>'; await cargarMaestros(); }
+  else cargarMaestros();   // con catálogos en el teléfono NO se espera al servidor: se actualizan en segundo plano si ya están viejos
+  await pintarVista(); sincronizar();
 }
 function cerrar() { if (HOST) HOST.classList.remove('on'); }
 async function iniciar() { S.formularios = formulariosDe(); entradas(); pintarBadges(); await cargarMaestros(); sincronizar(); }
@@ -2704,7 +2754,7 @@ A.on('logout', () => {   // al salir: se cierra la pantalla y se borran los cat�
   cerrar(); S.mae = null; S.plantios = {}; S.formularios = []; LS.del('mae'); Object.keys(localStorage).filter(k => k.indexOf('ff_plan_') === 0).forEach(k => localStorage.removeItem(k)); entradas(); pintarBadges();
 });
 Forms = {abrir, cerrar, iniciar, entradas, get abierto() { return !!HOST && HOST.classList.contains('on'); }, get pendientes() { return pendMios().length; }};
-window.__ff = {S, api, encolar, sincronizar, pintarVista, AVISOS, get root() { return ROOT; }};
+window.__ff = {S, api, encolar, sincronizar, pintarVista, cargarMaestros, AVISOS, get root() { return ROOT; }};
 if (A.auth.logged()) iniciar(); else entradas();
 }
 </script>

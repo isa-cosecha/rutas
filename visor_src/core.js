@@ -75,7 +75,7 @@ App = (() => {
 
   // ---------- programa de corte leído de Google Sheets (hoja "Programa de Corte" de Archivo_Maestros) ----------
   // Los datos del programa (frente, fecha, semana, secuencia, ha, toneladas…) se toman de la hoja; el repositorio sólo aporta la geometría y las rutas.
-  let PROG = {zafra: '', borrador: '', version: '', total: 0, enMapa: 0, sinMapa: [], fuera: 0, origen: 'repositorio', t: null};
+  let PROG = {zafra: '', borrador: '', version: '', total: 0, enMapa: 0, sinMapa: [], fuera: 0, origen: 'repositorio', t: null}, PROG_DOC = null;
   const PROG_CAMPOS = ['nm', 'var', 'nc', 'ha', 'tm', 'est', 'fc', 'fr', 'sem', 'sec', 'reg', 'ten', 'mun', 'tc', 'car', 'ubi', 'mul', 'dkm', 'dkmm'];
   const ordenPrograma = (a, b) => String(a.fr || '').localeCompare(String(b.fr || '')) || (a.sem || 0) - (b.sem || 0) || (a.sec || 0) - (b.sec || 0) || a.id.localeCompare(b.id);   // el mismo orden que ya tenía la lista
   function aplicarPrograma(doc, origen) {
@@ -92,6 +92,7 @@ App = (() => {
     });
     const ids = new Set(D.map(o => o.id));
     D.sort(ordenPrograma);
+    PROG_DOC = doc;   // las filas del programa quedan en memoria: el formulario ATS las usa para listar los plantíos sin llamar al servidor
     PROG = {zafra: doc.zafra, borrador: doc.borrador || '', version: doc.version || '', total: doc.rows.length, enMapa: n, sinMapa: doc.rows.filter(r => !ids.has(r.id)).map(r => r.id), fuera: D.filter(o => o.fuera).length, origen: origen || 'google', t: Date.now()};
     return true;
   }
@@ -307,6 +308,11 @@ App = (() => {
     let s = 90, w = 180, n = -90, e = -180; r.forEach(([y, x]) => { if (y < s) s = y; if (y > n) n = y; if (x < w) w = x; if (x > e) e = x; });
     return (k[i] = {p: puntoEtiqueta(r), b: [s, w, n, e]});
   }
+  const esMovil = () => document.documentElement.dataset.ui === 'movil' || (!document.documentElement.dataset.ui && L.Browser.mobile);
+  // El plantío seleccionado resalta (amarillo, negrita, grande); los demás son discretos: pequeños, delgados y translúcidos.
+  const estiloEtq = sel => sel
+    ? {fs: 12.5, peso: 700, relleno: '#ffe14d', halo: 'rgba(8,18,12,.88)', ancho: 3.4}
+    : {fs: esMovil() ? 8.5 : 9.5, peso: 500, relleno: 'rgba(255,255,255,.7)', halo: 'rgba(8,18,12,.5)', ancho: 2.2};
   function dibujarEtiquetas() {
     ETQ.raf = 0; const cv = ETQ.cv; if (!cv || !map) return;
     const tam = map.getSize(), dpr = window.devicePixelRatio || 1; ETQ.ultimo = [];
@@ -317,21 +323,33 @@ App = (() => {
     const bd = map.getBounds().pad(.05), S = bd.getSouth(), N = bd.getNorth(), W = bd.getWest(), E = bd.getEast();
     const filt = hasFilters() ? new Set(filtered.map(o => o.id)) : null;
     c.textAlign = 'center'; c.textBaseline = 'middle'; c.lineJoin = 'round';
-    let n = 0;
+    // 1) candidatos: cuadros visibles cuya etiqueta cabe dentro del cuadro
+    const cand = [];
     for (const o of D) {
       if (!o._bb || o._bb[2] < S || o._bb[0] > N || o._bb[3] < W || o._bb[1] > E) continue;
       const esSel = !!cur && cur.id === o.id; if (filt && !filt.has(o.id) && !esSel) continue;   // con filtros activos, sólo los plantíos filtrados
+      const est = estiloEtq(esSel); c.font = `${est.peso} ${est.fs}px Barlow, system-ui, sans-serif`;
       for (let i = 0; i < o.pol.length; i++) {
         const t = etiquetaDe(o, i); if (!t) continue;
         const [s2, w2, n2, e2] = t.b; if (n2 < S || s2 > N || e2 < W || w2 > E) continue;
-        const a = map.latLngToContainerPoint([s2, w2]), b = map.latLngToContainerPoint([n2, e2]), txt = Number(o.pol[i].ha).toFixed(2), fs = esSel ? 12.5 : 11;
-        c.font = `${esSel ? 700 : 600} ${fs}px Barlow, system-ui, sans-serif`;
-        if (Math.abs(b.x - a.x) < c.measureText(txt).width + 8 || Math.abs(a.y - b.y) < fs + 6) continue;   // cuadro demasiado pequeño para su etiqueta a este zoom
-        const p = map.latLngToContainerPoint(t.p);
-        c.lineWidth = 3.4; c.strokeStyle = 'rgba(8,18,12,.88)'; c.strokeText(txt, p.x, p.y); c.fillStyle = esSel ? '#ffe14d' : '#ffffff'; c.fillText(txt, p.x, p.y);
-        ETQ.ultimo.push({id: o.id, q: o.pol[i].q, txt, x: Math.round(p.x), y: Math.round(p.y)});
-        if (++n >= 900) return;
+        const a = map.latLngToContainerPoint([s2, w2]), b = map.latLngToContainerPoint([n2, e2]), txt = Number(o.pol[i].ha).toFixed(2), tw = c.measureText(txt).width;
+        if (Math.abs(b.x - a.x) < tw + 8 || Math.abs(a.y - b.y) < est.fs + 6) continue;   // cuadro demasiado pequeño para su etiqueta a este zoom
+        const p = map.latLngToContainerPoint(t.p); cand.push({o, i, sel: esSel, est, txt, tw, x: p.x, y: p.y, ha: Number(o.pol[i].ha) || 0});
       }
+    }
+    // 2) primero las del plantío seleccionado; luego las demás, de mayor a menor cuadro; una etiqueta que se encima con otra ya puesta se omite
+    cand.sort((a, b) => (b.sel - a.sel) || (b.ha - a.ha));
+    const CEL = 48, rej = new Map();
+    const choca = r => { for (let gx = Math.floor(r[0] / CEL); gx <= Math.floor(r[2] / CEL); gx++) for (let gy = Math.floor(r[1] / CEL); gy <= Math.floor(r[3] / CEL); gy++) { const l = rej.get(gx + ',' + gy); if (l) for (const q of l) if (!(r[2] < q[0] || r[0] > q[2] || r[3] < q[1] || r[1] > q[3])) return true; } return false; };
+    const marca = r => { for (let gx = Math.floor(r[0] / CEL); gx <= Math.floor(r[2] / CEL); gx++) for (let gy = Math.floor(r[1] / CEL); gy <= Math.floor(r[3] / CEL); gy++) { const k = gx + ',' + gy; (rej.get(k) || rej.set(k, []).get(k)).push(r); } };
+    let n = 0;
+    for (const e of cand) {
+      const r = [e.x - e.tw / 2 - 2, e.y - e.est.fs / 2 - 1, e.x + e.tw / 2 + 2, e.y + e.est.fs / 2 + 1];
+      if (!e.sel && choca(r)) continue; marca(r);
+      c.font = `${e.est.peso} ${e.est.fs}px Barlow, system-ui, sans-serif`;
+      c.lineWidth = e.est.ancho; c.strokeStyle = e.est.halo; c.strokeText(e.txt, e.x, e.y); c.fillStyle = e.est.relleno; c.fillText(e.txt, e.x, e.y);
+      ETQ.ultimo.push({id: e.o.id, q: e.o.pol[e.i].q, txt: e.txt, x: Math.round(e.x), y: Math.round(e.y), sel: e.sel, fs: e.est.fs, r});
+      if (++n >= 900) return;
     }
   }
   const pedirEtiquetas = () => { if (!ETQ.raf) ETQ.raf = requestAnimationFrame(dibujarEtiquetas); };
@@ -513,12 +531,13 @@ App = (() => {
   }
   async function refreshStatus() {
     if (!cfg.url || !logged()) return;
+    cargarPrograma();   // en paralelo con la sincronización (antes esperaba a que ella terminara)
     try {
       const j = await api('sync');
       if (j.ok) {
         remote = {}; Object.entries(j.status || {}).forEach(([k, v]) => remote[String(k).padStart(5, '0')] = v);
         if (j.rol && (sess.rol !== j.rol || sess.nombre !== j.nombre || JSON.stringify(sess.permisos) !== JSON.stringify(j.permisos))) { setSess({...sess, rol: j.rol, nombre: j.nombre, ficha: j.ficha || '', permisos: j.permisos}); emit('perfil', sess); }
-        applyPrefs(j.prefs); emit('status'); cargarPrograma();
+        applyPrefs(j.prefs); emit('status');
       }
     } catch {}
   }
@@ -660,7 +679,7 @@ App = (() => {
 
   return {META: META || {}, D, byId, F, CAT, PCAT, FLAGS, vis, cfg, esc, fmt, init: initMap, select, step, fitLocal, fitAll, applyFilters, options, csv, flush, refreshStatus,
     saveCfg, locate, on, savePrefs, hasFilters, clearFilters, CAPS, capasCerca, setCapas, cercaCapa, _t: {fraccionSobre, distPlantio, capaBBox, reglaSobre, tipPlantio, get etiquetas() { return ETQ.ultimo; }, dibujarEtiquetas}, valOf, valTag, srcTag, htmlKpis, htmlDetail, htmlPanelCapas, bindCapas, htmlForm, bind, kmFlag,
-    cargarPrograma, get programa() { return PROG; },
+    cargarPrograma, get programa() { return PROG; }, get programaDoc() { return PROG_DOC; },
     auth: {logged, login, logout, changePassword, get sess() { return sess; }, puede, canSubmit: () => puede('responder')},
     api: (accion, datos) => api(accion, datos || {}, true),
     get filtered() { return filtered; }, get cur() { return cur; }, get queueLen() { return queue.length; }, get map() { return map; }};

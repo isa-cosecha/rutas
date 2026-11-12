@@ -27,7 +27,7 @@ const LS = {get(k, d) { try { const v = localStorage.getItem('ff_' + k); return 
 const fmt = n => (Math.round(n * 10) / 10).toLocaleString('es-NI');
 function toast(m, ms = 3200) { if (!ROOT) { if (typeof UI !== 'undefined') UI.toast(m, ms); return; }   // pantalla de formularios aún no abierta (p. ej. envío en segundo plano tras refrescar): se usa el aviso del mapa
   const t = $('#toast'); t.textContent = m; t.classList.add('on'); clearTimeout(toast.t); toast.t = setTimeout(() => t.classList.remove('on'), ms); }
-const S = {formularios: [], pre: null, mae: null, odo: {}, cfg: {}, hoy: null, cola: LS.get('cola', []), hist: LS.get('hist', []), vista: 'combustible', enviando: false, online: navigator.onLine, plantios: {}, mensajeRed: ''};
+const S = {formularios: [], pre: null, mae: null, odo: {}, cfg: {}, hoy: null, cola: LS.get('cola', []), hist: LS.get('hist', []), vista: 'combustible', enviando: false, online: navigator.onLine, plantios: {}, mensajeRed: '', odoLocal: {}, maeProm: null};
 
 /* fecha/turno/zafra por defecto */
 function turnoActual() { const h = new Date().getHours(); return (h >= 6 && h < 18) ? 'Dia' : 'Noche'; }
@@ -44,23 +44,51 @@ window.addEventListener('offline', () => marcarRed(false));
 document.addEventListener('visibilitychange', () => { if (!document.hidden && A.auth.logged()) sincronizar(); });
 
 /* ======================================================================== MAESTROS */
-async function cargarMaestros() {
-  const c = LS.get('mae', null);
-  if (c && !S.mae) { S.mae = c.mae; S.odo = Object.assign({}, c.odo, S.odo); S.cfg = c.cfg; S.hoy = c.hoy; S.maeT = c.t; }
-  if (!A.auth.logged() || !navigator.onLine) return;
-  try {
-    const j = await api('form_maestros');
-    if (!j.ok) return;
-    marcarRed(true); S.mae = j.maestros; S.odo = Object.assign({}, j.odometros); S.cfg = j.config; S.hoy = j.hoy; S.maeT = Date.now();
-    LS.set('mae', {mae: S.mae, odo: S.odo, cfg: S.cfg, hoy: S.hoy, t: S.maeT});
-    const hoyDisp = ymd(new Date()); if (S.hoy && Math.abs((new Date(hoyDisp) - new Date(S.hoy)) / 86400000) >= 1) toast('⚠ La fecha de este teléfono (' + hoyDisp + ') no coincide con la del servidor (' + S.hoy + '). Revísala.', 7000);
-    if (ROOT) pintarTabs();   // no se redibuja el formulario: se borraría lo que la persona está escribiendo
-  } catch (e) { marcarRed(false); }
+const MAE_FRESCO_MS = 10 * 60 * 1000;   // los catálogos guardados se consideran al día durante 10 minutos
+/** Aplica los catálogos guardados en el teléfono (sin red). Devuelve true si había. */
+function leerCacheMae() {
+  if (S.mae) return true;
+  const c = LS.get('mae', null); if (!c) return false;
+  S.mae = c.mae; S.odo = Object.assign({}, c.odo, S.odo); S.cfg = c.cfg; S.hoy = c.hoy; S.maeT = c.t; return true;
 }
+/** Un odómetro guardado en este teléfono y todavía sin enviar manda sobre lo que diga el servidor (que aún no lo conoce). */
+function mezclarOdo(servidor) {
+  const o = Object.assign({}, servidor);
+  Object.keys(S.odoLocal).forEach(k => { const l = S.odoLocal[k]; if (S.cola.some(x => x.id === l.id)) o[k] = l.v; else delete S.odoLocal[k]; });
+  return o;
+}
+const zafraCalendario = f => { const [y, m] = f.split('-').map(Number), a = m >= 10 ? y : y - 1; return `${a}-${a + 1}`; };
+/** Catálogos (y plantíos de la zafra) desde el servidor. Una sola consulta a la vez; si lo guardado es reciente no se consulta. */
+function cargarMaestros(forzar) {
+  leerCacheMae();
+  if (!A.auth.logged() || !navigator.onLine) return Promise.resolve();
+  if (S.mae && !forzar && Date.now() - (S.maeT || 0) < MAE_FRESCO_MS) return Promise.resolve();
+  if (S.maeProm) return S.maeProm;
+  S.maeProm = (async () => {
+    try {
+      const j = await api('form_maestros', {zafra: zafraCalendario(ymd(new Date()))});
+      if (!j.ok) return;
+      marcarRed(true); S.mae = j.maestros; S.odo = mezclarOdo(j.odometros); S.cfg = j.config; S.hoy = j.hoy; S.maeT = Date.now();
+      LS.set('mae', {mae: S.mae, odo: S.odo, cfg: S.cfg, hoy: S.hoy, t: S.maeT});
+      if (j.plantios && j.zafra && !plantiosDelPrograma(j.zafra)) { S.plantios[j.zafra] = j.plantios; LS.set('plan_' + j.zafra, j.plantios); }   // vienen en la misma respuesta
+      const hoyDisp = ymd(new Date()); if (S.hoy && Math.abs((new Date(hoyDisp) - new Date(S.hoy)) / 86400000) >= 1) toast('⚠ La fecha de este teléfono (' + hoyDisp + ') no coincide con la del servidor (' + S.hoy + '). Revísala.', 7000);
+      if (ROOT) pintarTabs();   // no se redibuja el formulario: se borraría lo que la persona está escribiendo
+    } catch (e) { marcarRed(false); } finally { S.maeProm = null; }
+  })();
+  return S.maeProm;
+}
+/** Plantíos de la zafra tomados del programa de corte que el mapa ya tiene en el teléfono (sin llamar al servidor). */
+function plantiosDelPrograma(zafra) {
+  const d = A.programaDoc; if (!d || d.zafra !== zafra || !d.rows || !d.rows.length) return null;
+  return d.rows.map(r => [r.id, r.nm || '', r.var || '', r.fr || '', r.sem == null ? '' : r.sem, r.fc || '', r.sec == null ? '' : r.sec, r.ha == null ? '' : r.ha]);
+}
+async function actualizarPlantios(zafra) { try { const j = await api('form_plantios', {zafra}); if (j.ok) { S.plantios[zafra] = j.plantios; LS.set('plan_' + zafra, j.plantios); } } catch (e) {} }
 async function plantiosDe(zafra) {
+  const p = plantiosDelPrograma(zafra); if (p) { S.plantios[zafra] = p; return p; }
   if (S.plantios[zafra]) return S.plantios[zafra];
-  const c = LS.get('plan_' + zafra, null); if (c) S.plantios[zafra] = c;
-  if (navigator.onLine && A.auth.logged()) { try { const j = await api('form_plantios', {zafra}); if (j.ok) { S.plantios[zafra] = j.plantios; LS.set('plan_' + zafra, j.plantios); } } catch (e) {} }
+  const c = LS.get('plan_' + zafra, null);
+  if (c) { S.plantios[zafra] = c; if (navigator.onLine && A.auth.logged()) actualizarPlantios(zafra); return c; }   // se muestra lo guardado y se refresca en segundo plano
+  if (navigator.onLine && A.auth.logged()) await actualizarPlantios(zafra);
   return S.plantios[zafra] || [];
 }
 
@@ -81,14 +109,14 @@ async function sincronizar() {
       try { j = await api('form_enviar', {items: lote.map(i => ({id: i.id, modulo: i.modulo, datos: i.datos, forzar: !!i.forzar}))}); marcarRed(true); }
       catch (e) { marcarRed(navigator.onLine && false); break; }                    // sin señal: se reintenta solo
       if (!j.ok) { if (j.code === 'sesion') break; lote.forEach(i => { i.estado = 'error'; i.error = j.error || 'Error del servidor'; }); guardarCola(); break; }
-      let enviados = 0;
+      let enviados = 0, odoNuevo = false;
       j.resultados.forEach(r => {
         const it = S.cola.find(x => x.id === r.id); if (!it) return;
-        if (r.ok) { S.cola = S.cola.filter(x => x.id !== r.id); enviados++; if (!r.duplicado || !S.hist.some(h => h.id === r.id)) { S.hist.unshift({id: r.id, t: new Date().toISOString(), modulo: it.modulo, resumen: resumen(it.modulo, it.datos), fila: r.fila || null, uid: it.uid}); S.hist = S.hist.slice(0, 40); LS.set('hist', S.hist); } }
+        if (r.ok) { S.cola = S.cola.filter(x => x.id !== r.id); enviados++; if (it.modulo === 'motos' || it.modulo === 'combustible') odoNuevo = true; if (!r.duplicado || !S.hist.some(h => h.id === r.id)) { S.hist.unshift({id: r.id, t: new Date().toISOString(), modulo: it.modulo, resumen: resumen(it.modulo, it.datos), fila: r.fila || null, uid: it.uid}); S.hist = S.hist.slice(0, 40); LS.set('hist', S.hist); } }
         else if (r.codigo === 'repetido') { it.estado = 'repetido'; it.error = r.error; }
         else { it.estado = 'error'; it.error = r.error; it.codigo = r.codigo; }
       });
-      guardarCola();
+      guardarCola(); if (odoNuevo) cargarMaestros(true);   // el servidor ya conoce el odómetro nuevo: se refresca la sugerencia en segundo plano
       if (enviados) toast(`✓ ${enviados} registro${enviados > 1 ? 's' : ''} enviado${enviados > 1 ? 's' : ''}`);
       if (!lote.some(i => i.estado === 'pendiente') && !j.resultados.length) break;
     }
@@ -205,8 +233,8 @@ FORM.combustible = {
     mk(g('litros'), !(lit > 0), 'Escribe los litros.');
     if (er.length) return listaErrores(root, er);
     if (av.length && !await confirmar('Revisa estos datos', av)) return;
-    encolar('combustible', d); guardarUlt('combustible', {tipo, cisterna: d.cisterna});
-    if (tipo === 'moto' && d.odometro) S.odo[d.motor] = d.odometro;
+    const itC = encolar('combustible', d); guardarUlt('combustible', {tipo, cisterna: d.cisterna});
+    if (tipo === 'moto' && d.odometro) { S.odo[d.motor] = d.odometro; S.odoLocal[d.motor] = {v: d.odometro, id: itC.id}; }
     toast('Guardado ✓ ' + (S.online ? 'enviando…' : 'se enviará al volver la señal')); pintarVista(true);
   }
 };
@@ -248,7 +276,7 @@ FORM.motos = {
     const rec = of - oi; if (rec > AVISOS.recorridoMax) av.push(`Un recorrido de ${fmt(rec)} km es muy grande (lo normal es menos de ${AVISOS.recorridoMax}).`);
     const u = S.odo[d.equipo]; if (u && Math.abs(oi - u) > 1) av.push(`El odómetro inicial (${oi}) no coincide con el último registrado de esta moto (${u}).`);
     if (av.length && !await confirmar('Revisa estos datos', av)) return;
-    encolar('motos', d); guardarUlt('motos', {equipo: d.equipo}); S.odo[d.equipo] = of; toast('Guardado ✓ ' + (S.online ? 'enviando…' : 'se enviará al volver la señal')); pintarVista(true);
+    const itM = encolar('motos', d); guardarUlt('motos', {equipo: d.equipo}); S.odo[d.equipo] = of; S.odoLocal[d.equipo] = {v: of, id: itM.id}; toast('Guardado ✓ ' + (S.online ? 'enviando…' : 'se enviará al volver la señal')); pintarVista(true);
   }
 };
 
@@ -456,7 +484,10 @@ async function abrir(mod, pre) {
   HOST.dataset.modo = document.documentElement.dataset.ui === 'movil' || (!document.documentElement.dataset.ui && innerWidth <= 820) ? 'movil' : 'web';   // la misma versión (web/móvil) que eligió el mapa
   HOST.classList.add('on'); S.pre = pre || null;
   const ms = modulosPermitidos(); S.vista = (mod && ms.includes(mod)) ? mod : (ms.includes(S.vista) || S.vista === 'pendientes' ? S.vista : (ms[0] || 'pendientes'));
-  marcarRed(navigator.onLine); pintarBadges(); await cargarMaestros(); await pintarVista(); sincronizar();
+  marcarRed(navigator.onLine); pintarBadges();
+  if (!leerCacheMae()) { $('#vista').innerHTML = '<div class="card"><div class="cuerpo"><b>Cargando catálogos…</b><div class="ayuda" style="margin-top:6px">Solo la primera vez en este teléfono. Después se abren al instante, incluso sin señal.</div></div></div>'; await cargarMaestros(); }
+  else cargarMaestros();   // con catálogos en el teléfono NO se espera al servidor: se actualizan en segundo plano si ya están viejos
+  await pintarVista(); sincronizar();
 }
 function cerrar() { if (HOST) HOST.classList.remove('on'); }
 async function iniciar() { S.formularios = formulariosDe(); entradas(); pintarBadges(); await cargarMaestros(); sincronizar(); }
@@ -473,6 +504,6 @@ A.on('logout', () => {   // al salir: se cierra la pantalla y se borran los cat�
   cerrar(); S.mae = null; S.plantios = {}; S.formularios = []; LS.del('mae'); Object.keys(localStorage).filter(k => k.indexOf('ff_plan_') === 0).forEach(k => localStorage.removeItem(k)); entradas(); pintarBadges();
 });
 Forms = {abrir, cerrar, iniciar, entradas, get abierto() { return !!HOST && HOST.classList.contains('on'); }, get pendientes() { return pendMios().length; }};
-window.__ff = {S, api, encolar, sincronizar, pintarVista, AVISOS, get root() { return ROOT; }};
+window.__ff = {S, api, encolar, sincronizar, pintarVista, cargarMaestros, AVISOS, get root() { return ROOT; }};
 if (A.auth.logged()) iniciar(); else entradas();
 }

@@ -126,3 +126,9 @@ El programa de corte vive en la hoja **`Programa de Corte`** de `Archivo_Maestro
 - **Manifiesto, íconos y capturas** (`visor_src/pwa/`): se copian a `docs/` en cada compilación. Los íconos se generan con `scripts/generar_iconos.py`.
 - **Publicación en Firebase Hosting:** `firebase.json` publica la carpeta `docs/` (con las cabeceras de caché correctas) y `.firebaserc` guarda el ID del proyecto. El flujo `.github/workflows/firebase-hosting.yml` publica automáticamente cuando cambia `docs/` y cuando termina *Actualizar datos del visor*; necesita el secreto `FIREBASE_SERVICE_ACCOUNT`. A mano: `firebase deploy --only hosting`.
 - **APK con PWABuilder:** ver `LEEME_APK_PWABuilder.md` (entregada aparte). Para que el APK se abra sin la barra del navegador, la huella de su llave de firma va en **`docs/.well-known/assetlinks.json`**; el compilador crea ese archivo con textos de ejemplo solo si no existe y **nunca lo sobrescribe**.
+
+## Rendimiento de los formularios
+
+- **Cliente (`forms.js`):** al abrir los formularios no se espera al servidor si ya hay catálogos en el teléfono; si están viejos (más de 10 minutos) se actualizan en segundo plano y una sola consulta a la vez. Los plantíos del ATS salen del programa de corte que el mapa ya tiene (sin llamada aparte). Un odómetro guardado y aún sin enviar no se pisa con lo que diga el servidor.
+- **Servidor (`Codigo_Plataforma_v8.gs`):** el programa de corte (~320 KB) se guarda en la caché de Google por trozos (cada valor admite 100 KB) durante 2 minutos y se invalida al cargar un borrador nuevo; los odómetros se guardan 5 minutos y se invalidan al registrar un recorrido o una carga de moto; cada libro se abre una sola vez por ejecución.
+- **Etiquetas de hectáreas:** las del plantío seleccionado resaltan (12.5 px, negrita, amarillo); las demás son pequeñas (9.5 px en computadora, 8.5 px en celular), delgadas y translúcidas, y no se encimen (`estiloEtq` en `core.js`).

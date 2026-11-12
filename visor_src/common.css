@@ -124,3 +124,8 @@ details.mods summary{cursor:pointer;font-size:12.5px;padding:5px 8px;border:1px 
 details.mods[open] summary{border-color:var(--amber)}
 .modsl{display:grid;gap:4px;margin-top:6px;font-size:12.5px}.modsl label{display:flex;gap:6px;align-items:center;margin:0}
 @media (max-width:760px){.usrnew2{grid-template-columns:1fr}}
+/* ---- nota emergente del plantío y etiquetas de hectáreas ---- */
+.leaflet-tooltip.tipPl{background:var(--panel);color:var(--ink);border:1px solid var(--line);border-radius:8px;padding:8px 11px;white-space:normal;min-width:220px;box-shadow:0 4px 14px rgba(0,0,0,.5);font-size:13px;line-height:1.35}
+.leaflet-tooltip.tipPl:before{display:none}
+.tipP b{display:block;color:var(--amber);font-size:14px;margin-bottom:5px}.tipP .tc{color:var(--mute);font-size:12px;margin-bottom:2px}
+.tipP .tk{display:grid;grid-template-columns:auto 1fr;gap:2px 16px}.tipP .tk span:nth-child(odd){color:var(--mute)}.tipP .tk span:nth-child(even){text-align:right;font-weight:600}

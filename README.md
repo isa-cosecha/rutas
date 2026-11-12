@@ -113,3 +113,8 @@ El programa de corte vive en la hoja **`Programa de Corte`** de `Archivo_Maestro
 - **ATS:** lista los plantíos del programa con su frente, semana, fecha de corte y secuencia; al elegir uno completa el frente. Si se abre desde la ficha de un plantío en el mapa, ya viene elegido.
 - **Cargar un borrador nuevo:** pegar el Excel del programa en la hoja `Programa nuevo` de `Archivo_Maestros` y ejecutar el menú *Plataforma de campo → Cargar programa de corte*. Informa cuántos plantíos son nuevos, cuántos ya no están y cuántos cambiaron de fecha, frente o semana; deja el programa anterior en la hoja `Programa respaldo`; y no carga nada si encuentra errores (códigos repetidos, sin fecha, sin frente).
 - **Cuándo sí hay que subir algo a GitHub:** solo cuando se agregan plantíos nuevos (necesitan polígono) o cambia el mapeo. Para cambiar frente, fecha o semana basta la hoja.
+
+## Hectáreas por cuadro y nota emergente
+
+- Cada cuadro muestra su área en hectáreas como etiqueta (capa **Hectáreas de cada cuadro** del panel *Capas*; se guarda por usuario). Se dibujan en un lienzo propio (`core.js`, `dibujarEtiquetas`) entre las líneas y los íconos, con el punto de etiqueta siempre *dentro* del cuadro (también si es cóncavo), y se omiten las que no caben a ese zoom.
+- Al pasar el cursor sobre un plantío (computadora) se ve su nota: código, nombre, área total, TCH, TM, frente, semana, secuencia y fecha de corte.

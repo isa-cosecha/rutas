@@ -799,6 +799,11 @@ details.mods summary{cursor:pointer;font-size:12.5px;padding:5px 8px;border:1px 
 details.mods[open] summary{border-color:var(--amber)}
 .modsl{display:grid;gap:4px;margin-top:6px;font-size:12.5px}.modsl label{display:flex;gap:6px;align-items:center;margin:0}
 @media (max-width:760px){.usrnew2{grid-template-columns:1fr}}
+/* ---- nota emergente del plantío y etiquetas de hectáreas ---- */
+.leaflet-tooltip.tipPl{background:var(--panel);color:var(--ink);border:1px solid var(--line);border-radius:8px;padding:8px 11px;white-space:normal;min-width:220px;box-shadow:0 4px 14px rgba(0,0,0,.5);font-size:13px;line-height:1.35}
+.leaflet-tooltip.tipPl:before{display:none}
+.tipP b{display:block;color:var(--amber);font-size:14px;margin-bottom:5px}.tipP .tc{color:var(--mute);font-size:12px;margin-bottom:2px}
+.tipP .tk{display:grid;grid-template-columns:auto 1fr;gap:2px 16px}.tipP .tk span:nth-child(odd){color:var(--mute)}.tipP .tk span:nth-child(even){text-align:right;font-weight:600}
 
 #modeSw{margin-right:auto} dialog .row{flex-wrap:wrap}
 #boot{position:fixed;inset:0;z-index:5000;background:var(--panel);display:grid;place-items:center;padding:24px}
@@ -982,7 +987,7 @@ App = (() => {
   const FLAGS = {sin_mapeo:'Sin mapeo',solo_25_26:'Solo mapeo 25-26',sin_entrada:'Sin ruta de entrada',sin_salida:'Sin ruta de salida',sin_raja:'Sin puntos de raja',
     raja_fuera:'Rajas fuera del polígono',sin_poligono:'Sin polígono en Maestro',no_llega_lote:'Ruta termina a >1 km del lote',no_conecta_ingenio:'Ruta no conecta al ingenio'};
   const ASPECTOS = ['Ruta de entrada','Ruta de salida','Puntos de raja','Muleo / autovolteo','Fecha o secuencia','Frente o equipo','Otro'];
-  const vis = Object.fromEntries([...Object.keys(CAT).map(k => ['l' + k, true]), ...Object.keys(PCAT).map(k => ['p' + k, true]), ['ref', false]]);
+  const vis = Object.fromEntries([...Object.keys(CAT).map(k => ['l' + k, true]), ...Object.keys(PCAT).map(k => ['p' + k, true]), ['ref', false], ['lblHa', true]]);
   // Capas de apoyo (proyecto QField): cada una tiene una clave 'x'+id en la vista del usuario. 'xall' = ver todo el mapa.
   const CAPS = (CAPAS && CAPAS.capas) || [];
   CAPS.forEach(c => { vis['x' + c.id] = !!c.defecto; });
@@ -1176,7 +1181,7 @@ App = (() => {
       capWarn[c.id] = 0; idx.forEach(i => capaAdd(c, i, capAll)); });
   }
   const capasTodoPronto = () => { clearTimeout(capAllT); capAllT = setTimeout(capasTodo, 200); };
-  const redibujar = () => { if (cur) draw(cur); capasTodo(); };
+  const redibujar = () => { if (cur) draw(cur); capasTodo(); pedirEtiquetas(); };
   function setCapas(doc) {                             // vista previa en este equipo (no se guarda ni se publica)
     const nuevas = (doc && doc.capas) || [];
     D.forEach(o => { delete o._cap; });
@@ -1203,19 +1208,84 @@ App = (() => {
     // Un solo lienzo (preferCanvas): si hubiera dos, el de arriba absorbe los clics y los lotes de abajo dejan de responder.
     ctx = L.layerGroup().addTo(map); capAll = L.layerGroup().addTo(map); sel = L.layerGroup().addTo(map);
     map.on('moveend', capasTodoPronto);
+    map.createPane('etqPane'); const pEtq = map.getPane('etqPane'); pEtq.style.zIndex = 450; pEtq.style.pointerEvents = 'none';
+    ETQ.cv = L.DomUtil.create('canvas', 'etqHa', pEtq); ETQ.cx = ETQ.cv.getContext('2d');
+    map.on('move zoomend resize viewreset', pedirEtiquetas); map.on('zoomstart', () => { if (ETQ.cx) ETQ.cx.clearRect(0, 0, ETQ.cv.width, ETQ.cv.height); });
     const all = L.latLngBounds();
     D.forEach(o => { if (!o._rings.length) return;
       const lay = L.polygon(o._rings, {color: SRC_COL[o.src], weight: 1, fillOpacity: .12, opacity: .8});
-      lay.on('click', () => select(o.id)); if (!L.Browser.mobile) lay.bindTooltip(`${o.id} ${esc(o.nm)}`, {sticky: true});
+      lay.on('click', () => select(o.id)); if (!L.Browser.mobile) tooltipPlantio(lay, () => tipPlantio(o));
       lay.addTo(ctx); all.extend(lay.getBounds()); o._ctx = lay; });
     map.fitBounds(all); return map;
   }
+  // ---------- nota emergente al pasar el cursor: todos los datos del programa de corte ----------
+  const nfmt = (v, d = 1) => (v == null || v === '' || isNaN(Number(v))) ? '—' : Number(v).toLocaleString('es-NI', {minimumFractionDigits: d, maximumFractionDigits: d});
+  const fdmy = iso => iso ? iso.slice(8, 10) + '/' + iso.slice(5, 7) + '/' + iso.slice(0, 4) : '—';
+  function tipPlantio(o, p) {
+    return `<div class="tipP">${p ? `<div class="tc">Cuadro ${esc(p.q)} · ${nfmt(p.ha, 2)} ha</div>` : ''}<b>${esc(o.id)} · ${esc(o.nm)}</b><div class="tk">`
+      + `<span>Área total</span><span>${nfmt(o.ha)} ha</span><span>TCH</span><span>${nfmt(o.tch)}</span><span>TM</span><span>${nfmt(o.tm, 0)}</span>`
+      + `<span>Frente de corte</span><span>${esc(o.fr ?? '—')}</span><span>Semana</span><span>${esc(o.sem ?? '—')}</span><span>Secuencia</span><span>${esc(o.sec ?? '—')}</span>`
+      + `<span>Fecha de corte</span><span>${fdmy(o.fc)}</span></div></div>`;
+  }
+  /** La nota se abre hacia la izquierda si a su derecha estaría la ficha del plantío (que la taparía). */
+  const lado = e => {
+    const card = document.getElementById('card'), w = card && card.offsetParent ? card.offsetWidth + 12 : 0;
+    return e.containerPoint.x > map.getSize().x - w - 250 ? 'left' : 'right';
+  };
+  const tooltipPlantio = (lay, f) => lay.bindTooltip(f, {sticky: true, className: 'tipPl', direction: 'right'}).on('mouseover mousemove', e => { const t = lay.getTooltip(), d = lado(e); if (t && t.options.direction !== d) { t.options.direction = d; t.update(); } });   // update(): se reposiciona de inmediato
+  // ---------- etiquetas con las hectáreas de cada cuadro (como en QGIS) ----------
+  const ETQ = {cv: null, cx: null, raf: 0, ultimo: []};
+  function puntoEtiqueta(anillo) {   // un punto DENTRO del cuadro: su centroide, o (si es cóncavo) el centro del tramo más ancho de una recta horizontal
+    let a = 0, cx = 0, cy = 0; const n = anillo.length;
+    for (let i = 0, j = n - 1; i < n; j = i++) { const [y1, x1] = anillo[j], [y2, x2] = anillo[i], f = x1 * y2 - x2 * y1; a += f; cx += (x1 + x2) * f; cy += (y1 + y2) * f; }
+    const p = a ? [cy / (3 * a), cx / (3 * a)] : anillo[0];
+    if (pip(p, anillo)) return p;
+    const xs = [];
+    for (let i = 0, j = n - 1; i < n; j = i++) { const [y1, x1] = anillo[j], [y2, x2] = anillo[i]; if ((y1 > p[0]) !== (y2 > p[0])) xs.push(x1 + (p[0] - y1) / (y2 - y1) * (x2 - x1)); }
+    xs.sort((u, v) => u - v); let mejor = -1, medio = anillo[0][1];
+    for (let i = 0; i + 1 < xs.length; i += 2) if (xs[i + 1] - xs[i] > mejor) { mejor = xs[i + 1] - xs[i]; medio = (xs[i] + xs[i + 1]) / 2; }
+    return [p[0], medio];
+  }
+  function etiquetaDe(o, i) {   // punto y caja de cada cuadro, calculados una sola vez
+    const k = o._lbl || (o._lbl = []); if (k[i]) return k[i];
+    const r = o._rings[i] && o._rings[i][0]; if (!r || r.length < 3) return (k[i] = null);
+    let s = 90, w = 180, n = -90, e = -180; r.forEach(([y, x]) => { if (y < s) s = y; if (y > n) n = y; if (x < w) w = x; if (x > e) e = x; });
+    return (k[i] = {p: puntoEtiqueta(r), b: [s, w, n, e]});
+  }
+  function dibujarEtiquetas() {
+    ETQ.raf = 0; const cv = ETQ.cv; if (!cv || !map) return;
+    const tam = map.getSize(), dpr = window.devicePixelRatio || 1; ETQ.ultimo = [];
+    if (cv.width !== Math.round(tam.x * dpr) || cv.height !== Math.round(tam.y * dpr)) { cv.width = Math.round(tam.x * dpr); cv.height = Math.round(tam.y * dpr); cv.style.width = tam.x + 'px'; cv.style.height = tam.y + 'px'; }
+    L.DomUtil.setPosition(cv, map.containerPointToLayerPoint([0, 0]));   // el lienzo vive en un panel que se desplaza con el mapa
+    const c = ETQ.cx; c.setTransform(dpr, 0, 0, dpr, 0, 0); c.clearRect(0, 0, tam.x, tam.y);
+    if (!vis.lblHa || map.getZoom() < 13) return;
+    const bd = map.getBounds().pad(.05), S = bd.getSouth(), N = bd.getNorth(), W = bd.getWest(), E = bd.getEast();
+    const filt = hasFilters() ? new Set(filtered.map(o => o.id)) : null;
+    c.textAlign = 'center'; c.textBaseline = 'middle'; c.lineJoin = 'round';
+    let n = 0;
+    for (const o of D) {
+      if (!o._bb || o._bb[2] < S || o._bb[0] > N || o._bb[3] < W || o._bb[1] > E) continue;
+      const esSel = !!cur && cur.id === o.id; if (filt && !filt.has(o.id) && !esSel) continue;   // con filtros activos, sólo los plantíos filtrados
+      for (let i = 0; i < o.pol.length; i++) {
+        const t = etiquetaDe(o, i); if (!t) continue;
+        const [s2, w2, n2, e2] = t.b; if (n2 < S || s2 > N || e2 < W || w2 > E) continue;
+        const a = map.latLngToContainerPoint([s2, w2]), b = map.latLngToContainerPoint([n2, e2]), txt = Number(o.pol[i].ha).toFixed(2), fs = esSel ? 12.5 : 11;
+        c.font = `${esSel ? 700 : 600} ${fs}px Barlow, system-ui, sans-serif`;
+        if (Math.abs(b.x - a.x) < c.measureText(txt).width + 8 || Math.abs(a.y - b.y) < fs + 6) continue;   // cuadro demasiado pequeño para su etiqueta a este zoom
+        const p = map.latLngToContainerPoint(t.p);
+        c.lineWidth = 3.4; c.strokeStyle = 'rgba(8,18,12,.88)'; c.strokeText(txt, p.x, p.y); c.fillStyle = esSel ? '#ffe14d' : '#ffffff'; c.fillText(txt, p.x, p.y);
+        ETQ.ultimo.push({id: o.id, q: o.pol[i].q, txt, x: Math.round(p.x), y: Math.round(p.y)});
+        if (++n >= 900) return;
+      }
+    }
+  }
+  const pedirEtiquetas = () => { if (!ETQ.raf) ETQ.raf = requestAnimationFrame(dibujarEtiquetas); };
   const kmLen = ll => { let d = 0; for (let i = 1; i < ll.length; i++) d += map.distance(ll[i - 1], ll[i]); return d / 1000; };
   const icon = c => L.divIcon({className: '', html: c === 'R' ? '<div class="rmk"><i>R</i></div>' : `<div class="${PCAT[c][1]}"></div>`, iconSize: [18, 18], iconAnchor: c === 'R' ? [9, 20] : [9, 9]});
   function draw(o) {
     sel.clearLayers(); const local = L.latLngBounds(), all = L.latLngBounds();
     o.pol.forEach((p, i) => { const pl = L.polygon(o._rings[i], {color: '#ffe14d', weight: 3, fillColor: '#ffe14d', fillOpacity: .15})
-      .bindTooltip(`Cuadro ${esc(p.q)} · ${p.ha} ha`, {sticky: true}).addTo(sel); local.extend(pl.getBounds()); all.extend(pl.getBounds()); });
+      .addTo(sel); tooltipPlantio(pl, () => tipPlantio(o, p)); local.extend(pl.getBounds()); all.extend(pl.getBounds()); });
     if (CAPS.length && !vis.xall) capasDibujar(o, sel);
     const layer = (feats, ghost) => feats.forEach(f => {
       if (f.t === 'l') { if (!vis['l' + f.c]) return; const ll = dec(f.g), c = CAT[f.c];
@@ -1228,7 +1298,7 @@ App = (() => {
       } else if (f.t === 'a' && !ghost) L.polygon(dec(f.g), {color: '#fff', weight: 1, fillOpacity: .2, dashArray: '3 3'}).bindTooltip(esc(f.n || 'Área')).addTo(sel);
     });
     layer(o.f, false); if (vis.ref && o.ref) layer(o.ref, true);
-    curLocal = local.isValid() ? local : all; curAll = all;
+    curLocal = local.isValid() ? local : all; curAll = all; pedirEtiquetas();
   }
   const fitLocal = () => curLocal && curLocal.isValid() && map.fitBounds(curLocal, {...padFn(), maxZoom: 17});
   const fitAll = () => curAll && curAll.isValid() && map.fitBounds(curAll, padFn());
@@ -1262,7 +1332,7 @@ App = (() => {
       && (!F.val || (() => { const v = valOf(o.id); return F.val === 'none' ? !v : F.val === 'pend' ? v && v.pend : v && v.r === F.val; })()));
     const set = new Set(filtered.map(o => o.id));
     D.forEach(o => o._ctx && o._ctx.setStyle({opacity: set.has(o.id) ? .85 : .12, fillOpacity: set.has(o.id) ? .14 : .02}));
-    emit('filtered', filtered); return filtered;
+    pedirEtiquetas(); emit('filtered', filtered); return filtered;
   }
   const options = k => [...new Set(D.map(o => o[k]).filter(v => v != null && v !== ''))].sort((a, b) => a > b ? 1 : -1);
 
@@ -1338,7 +1408,7 @@ App = (() => {
     LS.set(pkey('prefs'), {...vis}); prefsDirty = true; LS.set(pkey('dirty'), true);
     setPState('pend'); clearTimeout(prefTimer); prefTimer = setTimeout(savePrefs, 1200);
   }
-  const PRESETS = {rutas: ['lE', 'lS'], operativa: ['lE', 'lS', 'lME', 'lMS', 'lAV', 'pR', 'xpostes', 'xvalvulas', 'xobstaculos', 'xpozos'], todo: PREF_KEYS.filter(k => k !== 'ref' && k !== 'xall')};
+  const PRESETS = {rutas: ['lE', 'lS'], operativa: ['lE', 'lS', 'lME', 'lMS', 'lAV', 'pR', 'lblHa', 'xpostes', 'xvalvulas', 'xobstaculos', 'xpozos'], todo: PREF_KEYS.filter(k => k !== 'ref' && k !== 'xall')};
   function applyPreset(n) { const on = new Set(PRESETS[n] || []); PREF_KEYS.forEach(k => { if (k !== 'ref' && k !== 'xall') vis[k] = on.has(k); }); }
 
   async function login(usuario, clave) {
@@ -1492,6 +1562,7 @@ App = (() => {
       <div class="sec">Rutas y puntos del plantío</div>
       <div class="lg">${Object.entries(CAT).map(([k, v]) => `<label><input type="checkbox" data-v="l${k}" ${vis['l' + k] ? 'checked' : ''}><span class="sw${v[3] ? ' d' : ''}" style="background:${v[1]};color:${v[1]}"></span><span>${v[0]}</span><span class="cnt">${num('l' + k)}</span></label>`).join('')}
       ${Object.entries(PCAT).map(([k, v]) => `<label><input type="checkbox" data-v="p${k}" ${vis['p' + k] ? 'checked' : ''}><span>${k === 'R' ? '<div class="rmk sm"><i>R</i></div>' : `<div class="${v[1]} sm"></div>`}</span><span>${v[0]}</span><span class="cnt">${num('p' + k)}</span></label>`).join('')}</div>
+      <label class="chk"><input type="checkbox" data-v="lblHa" ${vis.lblHa ? 'checked' : ''}> Hectáreas de cada cuadro (etiquetas)</label>
       <label class="chk"><input type="checkbox" data-v="ref" ${vis.ref ? 'checked' : ''}> Superponer mapeo 25-26 (punteado)</label>
       ${CAPS.length ? htmlCapas(o) : ''}
       <div class="pstate" data-s="${prefsDirty ? 'pend' : 'ok'}">${PSTATE[prefsDirty ? 'pend' : 'ok']}</div>`;
@@ -1533,7 +1604,7 @@ App = (() => {
   }
 
   return {META: META || {}, D, byId, F, CAT, PCAT, FLAGS, vis, cfg, esc, fmt, init: initMap, select, step, fitLocal, fitAll, applyFilters, options, csv, flush, refreshStatus,
-    saveCfg, locate, on, savePrefs, hasFilters, clearFilters, CAPS, capasCerca, setCapas, cercaCapa, _t: {fraccionSobre, distPlantio, capaBBox, reglaSobre}, valOf, valTag, srcTag, htmlKpis, htmlDetail, htmlPanelCapas, bindCapas, htmlForm, bind, kmFlag,
+    saveCfg, locate, on, savePrefs, hasFilters, clearFilters, CAPS, capasCerca, setCapas, cercaCapa, _t: {fraccionSobre, distPlantio, capaBBox, reglaSobre, tipPlantio, get etiquetas() { return ETQ.ultimo; }, dibujarEtiquetas}, valOf, valTag, srcTag, htmlKpis, htmlDetail, htmlPanelCapas, bindCapas, htmlForm, bind, kmFlag,
     cargarPrograma, get programa() { return PROG; },
     auth: {logged, login, logout, changePassword, get sess() { return sess; }, puede, canSubmit: () => puede('responder')},
     api: (accion, datos) => api(accion, datos || {}, true),

@@ -49,11 +49,33 @@ El script `apps_script/Codigo.gs` administra tres hojas del Google Sheets:
 
 | Hoja | Contenido |
 |---|---|
-| `Usuarios` | Usuario, nombre, rol, activo, clave (solo sal y hash). Se administra desde el menú **Rutas** de la hoja |
+| `Usuarios` | Usuario, nombre, rol, activo, clave (solo sal y hash). Se administra desde la aplicación (⚙ *Mi cuenta* > **Administrar usuarios**); el menú **Rutas** de la hoja queda como respaldo |
 | `Configuración` | Una fila por usuario con las capas del mapa que quiere ver (Sí / No). Se puede editar a mano |
 | `Respuestas` | Validaciones de campo. Usuario, nombre y rol los pone el servidor según la sesión |
 
-Roles: **Administrador** y **Supervisor** registran respuestas; **Consulta** solo ve. Para dar de baja a alguien, cambia *Activo* a `No` y su sesión se cierra de inmediato.
+### Administrar usuarios desde la aplicación
+
+Con un usuario **Administrador**: ⚙ *Mi cuenta* > **Administrar usuarios**.
+
+| Quiero… | Cómo |
+|---|---|
+| Crear un usuario | *Nuevo usuario*: usuario (sin espacios), nombre y rol > **Crear usuario**. Se muestra un **código temporal** (una sola vez) que le entregas; al entrar, el visor le pide crear su propia clave |
+| Restablecer una clave | Botón **Restablecer clave** de su fila. La clave anterior deja de servir, se cierran sus sesiones abiertas y se genera un código temporal nuevo |
+| Cambiar el rol (dar o quitar permisos) | Selector **Rol** de su fila. Rige de inmediato, sin que la persona salga y entre |
+| Dar de baja o reactivar | Botón **Activo / Inactivo**. Al desactivar pierde el acceso al instante; sus respuestas anteriores se conservan |
+| Liberar a alguien bloqueado | Tras 5 intentos fallidos se bloquea 15 min; botón **Desbloquear** |
+| Ver quién hizo qué | *Historial de cambios* (crear, editar, restablecer, desbloquear; nunca guarda claves) |
+
+Permisos por rol (se aplican en el servidor; la pantalla solo oculta botones):
+
+| Permiso | Administrador | Supervisor | Consulta |
+|---|:-:|:-:|:-:|
+| Ver mapa, rutas, capas y estado de las respuestas | ✓ | ✓ | ✓ |
+| Registrar "según lo planificado / diferente" | ✓ | ✓ | — |
+| Convertir y publicar las capas del QField | ✓ | — | — |
+| Administrar usuarios, roles y claves | ✓ | — | — |
+
+Protecciones: un administrador no puede quitarse su propio rol, desactivarse ni restablecer su propia clave desde el panel (usa *Cambiar clave*), y siempre debe quedar al menos un administrador activo. **Emergencia:** si nadie puede entrar como administrador, el menú *Rutas > Crear o reiniciar usuario* de la hoja de Google sigue funcionando.
 
 Ejecutar las pruebas del servidor: `node apps_script/harness.js test`.
 

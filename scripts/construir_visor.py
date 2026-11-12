@@ -173,6 +173,7 @@ html = f'''<!doctype html>
 <script>{core}</script>
 <script>{rd(S('common_ui.js'))}</script>
 <script>{rd(S('admin_capas.js'))}</script>
+<script>{rd(S('admin_usuarios.js'))}</script>
 <script type="application/json" id="capasCfg">{CAPAS_CFG}</script>
 <script type="text/plain" id="jsWeb">{esc(w_js)}</script>
 <script type="text/plain" id="jsMovil">{esc(m_js)}</script>

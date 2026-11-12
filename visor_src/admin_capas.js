@@ -272,7 +272,7 @@ const AdminCapas = (() => {
 /* ---------- interfaz del diálogo (sólo administradores) ---------- */
 function initAdmin() {
   const $ = id => document.getElementById(id), A = App;
-  const esAdmin = () => A.auth.logged() && A.auth.sess.rol === 'Administrador';
+  const esAdmin = () => A.auth.puede('capas_admin');
   const fmtMB = n => (n / 1e6).toFixed(n > 1e7 ? 0 : 1) + ' MB';
   let cfgCapas = null, mapa = null, res = null, texto = null;
   try { cfgCapas = JSON.parse(document.getElementById('capasCfg').textContent); } catch {}

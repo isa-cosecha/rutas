@@ -5,6 +5,10 @@
  *   Usuarios       Quién puede entrar. Las claves se guardan con sal y hash, nunca en texto.
  *   Configuración  Una fila por usuario con las capas del mapa que quiere ver (Sí / No).
  *   Respuestas     "Se trabajó según lo planificado / diferente", con nota. El usuario sale de la sesión.
+ *   Auditoría      Quién creó, editó o restableció a quién (nunca registra claves). Se crea sola.
+ *
+ * Usuarios, roles y claves se administran desde el visor (Mi cuenta > Administrar usuarios). El menú "Rutas" de esta hoja queda
+ * como respaldo de emergencia (por ejemplo, para crear el primer administrador).
  *
  * INSTALACIÓN (una vez; si ya tenías la versión anterior, reemplaza TODO el código):
  * 1. Hoja de cálculo > Extensiones > Apps Script. Pega este archivo y guarda.
@@ -19,6 +23,14 @@
 const HOJA_RESP = 'Respuestas', HOJA_USR = 'Usuarios', HOJA_CFG = 'Configuración';
 const SESION_DIAS = 30, MAX_FALLOS = 5, BLOQUEO_SEG = 900, ITERACIONES = 1500, CLAVE_MIN = 6;
 const ROLES = ['Administrador', 'Supervisor', 'Consulta'];
+// Permisos por rol. Se aplican en el SERVIDOR en cada acción (la pantalla solo los usa para mostrar u ocultar botones).
+const PERMISOS = {
+  Administrador: ['ver', 'responder', 'capas_admin', 'usuarios_admin'],
+  Supervisor: ['ver', 'responder'],
+  Consulta: ['ver']};
+const PERMISO_TXT = {ver: 'Ver mapa, rutas, capas y estado de las respuestas', responder: 'Registrar "según lo planificado / diferente" (con nota)',
+  capas_admin: 'Convertir y publicar las capas del QField', usuarios_admin: 'Administrar usuarios, roles y claves'};
+const HOJA_AUD = 'Auditoría', HEAD_AUD = ['Fecha', 'Administrador', 'Acción', 'Usuario afectado', 'Detalle'];
 
 const HEAD_RESP = ['Recibido', 'ID', 'Fecha/hora dispositivo', 'Código', 'Nombre', 'Frente', 'Semana', 'Secuencia',
   'Fecha corte plan', 'Fecha de trabajo', 'Resultado', 'Aspectos diferentes', 'Nota', 'Usuario',
@@ -111,7 +123,7 @@ function leerUsuarios_() {
   if (n < 2) return [];
   return s.getRange(2, 1, n - 1, HEAD_USR.length).getValues().map((r, i) => ({
     fila: i + 2, usuario: norm_(r[0]), nombre: String(r[1] || r[0]).trim(), rol: String(r[2] || 'Consulta').trim(),
-    activo: si_(r[3]), cambiar: si_(r[4]), sal: String(r[5]), hash: String(r[6])})).filter(u => u.usuario);
+    activo: si_(r[3]), cambiar: si_(r[4]), sal: String(r[5]), hash: String(r[6]), creado: r[7], ultimo: r[8]})).filter(u => u.usuario);
 }
 function buscarUsuario_(usuario) { const k = norm_(usuario); return leerUsuarios_().filter(u => u.usuario === k)[0] || null; }
 function validarToken_(token) {
@@ -126,6 +138,7 @@ function validarToken_(token) {
   if (!u || !u.activo || u.cambiar || u.hash.slice(0, 10) !== p[2]) return null;
   return u;
 }
+function puede_(u, permiso) { return (PERMISOS[u.rol] || []).indexOf(permiso) >= 0; }
 function sesion_(b) { const u = validarToken_(b.token); if (!u) throw {codigo: 'sesion', mensaje: 'Tu sesión venció. Ingresa de nuevo.'}; return u; }
 
 /* ---------- control de intentos ---------- */
@@ -169,7 +182,7 @@ function accionLogin_(b) {
   if (u.cambiar) return {ok: true, cambiar: true, usuario: u.usuario, nombre: u.nombre};
   const t = crearToken_(u);
   hojaUsr_().getRange(u.fila, 9).setValue(new Date());
-  return {ok: true, token: t.token, exp: t.exp, usuario: u.usuario, nombre: u.nombre, rol: u.rol, prefs: leerCapas_(u.usuario)};
+  return {ok: true, token: t.token, exp: t.exp, usuario: u.usuario, nombre: u.nombre, rol: u.rol, permisos: PERMISOS[u.rol] || ['ver'], prefs: leerCapas_(u.usuario)};
 }
 function accionCambiarClave_(b) {
   const u = verificarClave_(b.usuario, b.actual);
@@ -191,7 +204,7 @@ function accionSync_(b) {
       if (!status[code] || status[code].t < t) status[code] = {r: r[10], n: r[12], u: r[19] || r[13], t};
     });
   }
-  return {ok: true, usuario: u.usuario, nombre: u.nombre, rol: u.rol, status, prefs: leerCapas_(u.usuario)};
+  return {ok: true, usuario: u.usuario, nombre: u.nombre, rol: u.rol, permisos: PERMISOS[u.rol] || ['ver'], status, prefs: leerCapas_(u.usuario)};
 }
 function accionPrefs_(b) {
   const u = sesion_(b);
@@ -201,7 +214,7 @@ function accionPrefs_(b) {
 }
 function accionEnviar_(b) {
   const u = sesion_(b);
-  if (u.rol === 'Consulta') throw {mensaje: 'Tu rol es de consulta: no puede registrar respuestas.'};
+  if (!puede_(u, 'responder')) throw {mensaje: 'Tu rol es de consulta: no puede registrar respuestas.', codigo: 'permiso'};
   const items = Array.isArray(b.items) ? b.items : [];
   const s = hojaResp_(), n = s.getLastRow();
   const vistos = {};
@@ -222,6 +235,76 @@ function accionEnviar_(b) {
   return {ok: true, accepted: aceptados};
 }
 
+/* ---------- administración de usuarios (solo con permiso 'usuarios_admin') ---------- */
+function exigir_(b, permiso) {
+  const u = sesion_(b);
+  if (!puede_(u, permiso)) throw {mensaje: 'No tienes permiso para esta acción.', codigo: 'permiso'};
+  return u;
+}
+function rolValido_(r) { return ROLES.filter(x => x.toLowerCase() === String(r || '').trim().toLowerCase())[0] || null; }
+function auditar_(admin, accion, objetivo, detalle) {   // nunca se registran claves ni códigos temporales
+  const h = hoja_(HOJA_AUD, HEAD_AUD);
+  h.getRange(h.getLastRow() + 1, 1, 1, HEAD_AUD.length).setValues([[new Date(), admin.usuario + ' (' + admin.nombre + ')', accion, objetivo || '', detalle || '']]);
+}
+function iso_(v) { return v instanceof Date ? v.toISOString() : (v ? String(v) : ''); }
+function accionUsrListar_(b) {
+  exigir_(b, 'usuarios_admin');
+  const usuarios = leerUsuarios_().map(u => ({usuario: u.usuario, nombre: u.nombre, rol: u.rol, activo: u.activo, pendiente: u.cambiar,
+    bloqueado: fallos_(u.usuario) >= MAX_FALLOS, creado: iso_(u.creado), ultimo: iso_(u.ultimo)}));   // jamás se envían sal ni hash
+  return {ok: true, usuarios, roles: ROLES, permisos: PERMISOS, etiquetas: PERMISO_TXT};
+}
+function accionUsrCrear_(b) {
+  const a = exigir_(b, 'usuarios_admin'), k = norm_(b.usuario), rol = rolValido_(b.rol), nombre = String(b.nombre || '').trim().slice(0, 80);
+  if (!/^[a-z0-9._-]{3,30}$/.test(k)) throw {mensaje: 'Usuario inválido: 3 a 30 caracteres (letras, números, punto, guion o guion bajo), sin espacios.'};
+  if (!rol) throw {mensaje: 'Elige un rol válido: ' + ROLES.join(', ') + '.'};
+  if (buscarUsuario_(k)) throw {mensaje: 'Ese usuario ya existe. Si olvidó su clave, usa "Restablecer clave".'};
+  const r = crearUsuario_(k, nombre || k, rol);
+  auditar_(a, 'Crear usuario', k, 'Rol: ' + rol);
+  return {ok: true, usuario: k, codigo: r.codigo};
+}
+function accionUsrReiniciar_(b) {
+  const a = exigir_(b, 'usuarios_admin'), k = norm_(b.usuario), u = buscarUsuario_(k);
+  if (!u) throw {mensaje: 'El usuario no existe.'};
+  if (k === a.usuario) throw {mensaje: 'Para cambiar tu propia clave usa "Cambiar clave" en Mi cuenta.'};
+  const codigo = codigoTemporal_(), sal = Utilities.getUuid();
+  hojaUsr_().getRange(u.fila, 5, 1, 3).setValues([['Sí', sal, hash_(sal, codigo)]]);   // debe cambiar la clave; las sesiones anteriores dejan de valer
+  limpiarFallos_(k);
+  auditar_(a, 'Restablecer clave', k, u.activo ? '' : 'El usuario sigue inactivo');
+  return {ok: true, usuario: k, codigo};
+}
+function accionUsrEditar_(b) {
+  const a = exigir_(b, 'usuarios_admin'), k = norm_(b.usuario), u = buscarUsuario_(k);
+  if (!u) throw {mensaje: 'El usuario no existe.'};
+  const rol = b.rol === undefined ? u.rol : rolValido_(b.rol), activo = b.activo === undefined ? u.activo : !!b.activo;
+  const nombre = b.nombre === undefined ? u.nombre : String(b.nombre).trim().slice(0, 80) || u.usuario;
+  if (!rol) throw {mensaje: 'Rol inválido.'};
+  if (k === a.usuario && (rol !== u.rol || !activo)) throw {mensaje: 'No puedes cambiar tu propio rol ni desactivarte. Pídeselo a otro administrador.'};
+  const dejaDeSerAdmin = u.rol === 'Administrador' && u.activo && (rol !== 'Administrador' || !activo);
+  if (dejaDeSerAdmin && leerUsuarios_().filter(x => x.rol === 'Administrador' && x.activo && x.usuario !== k).length === 0)
+    throw {mensaje: 'Debe quedar al menos un administrador activo.'};
+  const cambios = [];
+  if (nombre !== u.nombre) cambios.push('Nombre: ' + u.nombre + ' → ' + nombre);
+  if (rol !== u.rol) cambios.push('Rol: ' + u.rol + ' → ' + rol);
+  if (activo !== u.activo) cambios.push(activo ? 'Activado' : 'Desactivado');
+  if (!cambios.length) return {ok: true, sinCambios: true};
+  hojaUsr_().getRange(u.fila, 2, 1, 3).setValues([[nombre, rol, activo ? 'Sí' : 'No']]);   // el rol y el estado rigen de inmediato en la siguiente acción del usuario
+  auditar_(a, 'Editar usuario', k, cambios.join(' · '));
+  return {ok: true, usuario: k};
+}
+/** Historial de cambios de administración (lo más reciente primero, máximo 100). Nunca contiene claves ni códigos temporales. */
+function accionUsrAuditoria_(b) {
+  exigir_(b, 'usuarios_admin');
+  const h = hoja_(HOJA_AUD, HEAD_AUD), n = h.getLastRow();
+  const v = n >= 2 ? h.getRange(Math.max(2, n - 99), 1, Math.min(100, n - 1), HEAD_AUD.length).getValues() : [];
+  return {ok: true, registros: v.reverse().map(r => ({fecha: iso_(r[0]), admin: String(r[1]), accion: String(r[2]), usuario: String(r[3]), detalle: String(r[4])}))};
+}
+function accionUsrDesbloquear_(b) {
+  const a = exigir_(b, 'usuarios_admin'), k = norm_(b.usuario);
+  if (!buscarUsuario_(k)) throw {mensaje: 'El usuario no existe.'};
+  limpiarFallos_(k); auditar_(a, 'Desbloquear usuario', k, 'Intentos fallidos reiniciados');
+  return {ok: true, usuario: k};
+}
+
 function doPost(e) {
   let b;
   try { b = JSON.parse((e.postData && e.postData.contents) || '{}'); } catch (x) { return json_({ok: false, error: 'Solicitud inválida'}); }
@@ -234,6 +317,12 @@ function doPost(e) {
       case 'sync': return json_(accionSync_(b));
       case 'prefs_set': return json_(accionPrefs_(b));
       case 'submit': return json_(accionEnviar_(b));
+      case 'usr_listar': return json_(accionUsrListar_(b));
+      case 'usr_crear': return json_(accionUsrCrear_(b));
+      case 'usr_reiniciar': return json_(accionUsrReiniciar_(b));
+      case 'usr_editar': return json_(accionUsrEditar_(b));
+      case 'usr_desbloquear': return json_(accionUsrDesbloquear_(b));
+      case 'usr_auditoria': return json_(accionUsrAuditoria_(b));
       default: return json_({ok: false, error: 'Acción desconocida'});
     }
   } catch (err) {
@@ -243,7 +332,7 @@ function doPost(e) {
 }
 
 /** Comprobación de servicio. No devuelve datos ni usuarios. */
-function doGet() { return json_({ok: true, servicio: 'Rutas por plantío', version: 2, requiere_login: true}); }
+function doGet() { return json_({ok: true, servicio: 'Rutas por plantío', version: 4, requiere_login: true}); }
 
 /* ---------- administración desde la hoja de cálculo ---------- */
 function codigoTemporal_() {

@@ -141,6 +141,76 @@ if (require.main === module) {
     T('migración: las capas nuevas quedan vacías (= por defecto) y el encabezado se actualiza', m[1][col('Pozos')] === '' && m[1][col('Capas de apoyo: todo el mapa (zoom 14+)')] === '' && m[0].length === 27, [m[0].length, m[1][col('Pozos')]]);
     const lgA = (() => { const cA = E3.admin('crearUsuario_', 'antiguo', 'Antiguo', 'Supervisor'); E3.post({action: 'cambiar_clave', usuario: 'antiguo', actual: cA.codigo, nueva: 'abcdef'}); return E3.post({action: 'login', usuario: 'antiguo', clave: 'abcdef'}); })();
     T('migración: usuario antiguo conserva su vista y recibe defaults en las capas nuevas', lgA.prefs.lE === false && lgA.prefs.xpozos === true && lgA.prefs.xall === false, lgA.prefs);
+    // ---- administración de usuarios desde la aplicación ----
+    const E4 = nuevoEntorno(), clave0 = 'clave123';
+    const mk = (u, nombre, rol) => { const c = E4.admin('crearUsuario_', u, nombre, rol); E4.post({action: 'cambiar_clave', usuario: u, actual: c.codigo, nueva: clave0}); return E4.post({action: 'login', usuario: u, clave: clave0}); };
+    const ad1 = mk('admin1', 'Administrador Uno', 'Administrador'), su1 = mk('sup1', 'Supervisor Uno', 'Supervisor'), co1 = mk('con1', 'Consulta Uno', 'Consulta');
+    T('el login entrega los permisos del rol', ad1.permisos.includes('usuarios_admin') && su1.permisos.join() === 'ver,responder' && co1.permisos.join() === 'ver', [ad1.permisos, su1.permisos, co1.permisos]);
+    r = E4.post({action: 'usr_listar', token: su1.token}); T('un Supervisor NO puede listar usuarios (aunque llame al servidor)', !r.ok && r.code === 'permiso', r);
+    r = E4.post({action: 'usr_crear', token: co1.token, usuario: 'intruso', nombre: 'X', rol: 'Administrador'}); T('un usuario de Consulta NO puede crear usuarios ni darse permisos', !r.ok && r.code === 'permiso' && !E4.admin('buscarUsuario_', 'intruso'), r);
+    r = E4.post({action: 'usr_editar', token: su1.token, usuario: 'sup1', rol: 'Administrador'}); T('un Supervisor NO puede ascenderse a Administrador', !r.ok && r.code === 'permiso' && E4.admin('buscarUsuario_', 'sup1').rol === 'Supervisor', r);
+    r = E4.post({action: 'usr_reiniciar', token: su1.token, usuario: 'admin1'}); T('un Supervisor NO puede restablecer la clave de un administrador', !r.ok && r.code === 'permiso', r);
+    r = E4.post({action: 'usr_listar', token: 'falso.token'}); T('sin sesión válida no se administra nada', !r.ok && r.code === 'sesion', r);
+    r = E4.post({action: 'usr_listar', token: ad1.token}); const hashReal = E4.hojas['Usuarios'].d[1][6];
+    T('el administrador lista los usuarios con rol, estado y último ingreso', r.ok && r.usuarios.length === 3 && r.usuarios.every(u => u.usuario && u.rol && typeof u.activo === 'boolean' && u.ultimo), r.usuarios);
+    T('la lista JAMÁS incluye sal ni hash de claves', !/"(sal|hash)"/.test(JSON.stringify(r)) && !JSON.stringify(r).includes(hashReal));
+    T('la lista incluye la matriz de permisos por rol', r.permisos.Administrador.includes('usuarios_admin') && !r.permisos.Supervisor.includes('usuarios_admin') && r.etiquetas.usuarios_admin, r.permisos);
+    const codigos = [];
+    r = E4.post({action: 'usr_crear', token: ad1.token, usuario: 'Nuevo.Usr', nombre: 'Nuevo Usuario', rol: 'supervisor'}); codigos.push(r.codigo);
+    T('crear usuario: entrega un código temporal de 6 dígitos y normaliza el nombre de usuario', r.ok && /^\d{6}$/.test(r.codigo) && r.usuario === 'nuevo.usr' && E4.admin('buscarUsuario_', 'nuevo.usr').rol === 'Supervisor', r);
+    T('el código temporal no queda guardado en texto en la hoja', !JSON.stringify(E4.hojas['Usuarios'].d).includes(r.codigo));
+    r = E4.post({action: 'usr_crear', token: ad1.token, usuario: 'nuevo.usr', nombre: 'Otro', rol: 'Consulta'}); T('crear un usuario que ya existe se rechaza', !r.ok && /ya existe/.test(r.error), r);
+    r = E4.post({action: 'usr_crear', token: ad1.token, usuario: 'a b', nombre: 'X', rol: 'Consulta'}); T('nombre de usuario con espacios se rechaza', !r.ok && /inválido/.test(r.error), r);
+    r = E4.post({action: 'usr_crear', token: ad1.token, usuario: 'otro.usr', nombre: 'X', rol: 'Jefe'}); T('rol inexistente se rechaza', !r.ok && /rol/i.test(r.error) && !E4.admin('buscarUsuario_', 'otro.usr'), r);
+    r = E4.post({action: 'login', usuario: 'nuevo.usr', clave: codigos[0]}); T('el usuario nuevo entra con el código y debe crear su propia clave', r.ok && r.cambiar && !r.token, r);
+    r = E4.post({action: 'usr_listar', token: ad1.token}); T('la lista marca al usuario nuevo como pendiente de primer ingreso', r.usuarios.find(u => u.usuario === 'nuevo.usr').pendiente === true);
+    E4.post({action: 'cambiar_clave', usuario: 'nuevo.usr', actual: codigos[0], nueva: 'MiClave99'}); const nu = E4.post({action: 'login', usuario: 'nuevo.usr', clave: 'MiClave99'});
+    T('tras crear su clave el usuario entra con normalidad', nu.ok && nu.token && nu.rol === 'Supervisor', nu);
+    // restablecer clave
+    r = E4.post({action: 'usr_reiniciar', token: ad1.token, usuario: 'nuevo.usr'}); codigos.push(r.codigo);
+    T('restablecer clave entrega un código temporal nuevo', r.ok && /^\d{6}$/.test(r.codigo), r);
+    T('la clave anterior deja de servir', !E4.post({action: 'login', usuario: 'nuevo.usr', clave: 'MiClave99'}).ok);
+    T('las sesiones abiertas del usuario se cierran', E4.post({action: 'sync', token: nu.token}).code === 'sesion');
+    r = E4.post({action: 'login', usuario: 'nuevo.usr', clave: codigos[1]}); T('con el código nuevo debe volver a crear su clave', r.ok && r.cambiar, r);
+    r = E4.post({action: 'usr_reiniciar', token: ad1.token, usuario: 'admin1'}); T('un administrador no restablece su propia clave desde aquí', !r.ok && /Cambiar clave/.test(r.error), r);
+    r = E4.post({action: 'usr_reiniciar', token: ad1.token, usuario: 'fantasma'}); T('restablecer un usuario inexistente se rechaza', !r.ok && /no existe/.test(r.error), r);
+    // roles y estado
+    const su2 = mk('sup2', 'Supervisor Dos', 'Supervisor'); const itz = {id: 'z1', ts: new Date().toISOString(), codigo: '80683', nombre: 'X', resultado: 'Según lo planificado', usuario: 'x'};
+    T('antes del cambio de rol, el Supervisor puede registrar respuestas', E4.post({action: 'submit', token: su2.token, items: [itz]}).ok);
+    r = E4.post({action: 'usr_editar', token: ad1.token, usuario: 'sup2', rol: 'Consulta'}); T('cambiar el rol a Consulta', r.ok, r);
+    r = E4.post({action: 'submit', token: su2.token, items: [{...itz, id: 'z2'}]}); T('el cambio de rol rige de inmediato, sin que el usuario salga y entre', !r.ok && r.code === 'permiso', r);
+    r = E4.post({action: 'sync', token: su2.token}); T('y sus permisos reflejan el rol nuevo', r.ok && r.rol === 'Consulta' && r.permisos.join() === 'ver', r);
+    r = E4.post({action: 'usr_editar', token: ad1.token, usuario: 'sup2', activo: false}); T('desactivar usuario', r.ok, r);
+    T('un usuario desactivado pierde la sesión al instante', E4.post({action: 'sync', token: su2.token}).code === 'sesion');
+    T('y no puede volver a entrar', !E4.post({action: 'login', usuario: 'sup2', clave: clave0}).ok);
+    E4.post({action: 'usr_editar', token: ad1.token, usuario: 'sup2', activo: true}); T('reactivarlo le devuelve el acceso con su misma clave', E4.post({action: 'login', usuario: 'sup2', clave: clave0}).ok);
+    r = E4.post({action: 'usr_editar', token: ad1.token, usuario: 'sup2', nombre: 'Supervisor Dos (K8)'}); T('cambiar el nombre', r.ok && E4.admin('buscarUsuario_', 'sup2').nombre === 'Supervisor Dos (K8)', r);
+    r = E4.post({action: 'usr_editar', token: ad1.token, usuario: 'sup2', nombre: 'Supervisor Dos (K8)'}); T('editar sin cambios no hace nada', r.ok && r.sinCambios, r);
+    r = E4.post({action: 'usr_editar', token: ad1.token, usuario: 'admin1', rol: 'Consulta'}); T('un administrador no puede quitarse su propio rol', !r.ok && /propio rol/.test(r.error) && E4.admin('buscarUsuario_', 'admin1').rol === 'Administrador', r);
+    r = E4.post({action: 'usr_editar', token: ad1.token, usuario: 'admin1', activo: false}); T('ni desactivarse a sí mismo', !r.ok && E4.admin('buscarUsuario_', 'admin1').activo === true, r);
+    r = E4.post({action: 'usr_editar', token: ad1.token, usuario: 'sup2', rol: 'Rey'}); T('editar con un rol inválido se rechaza', !r.ok, r);
+    r = E4.post({action: 'usr_editar', token: ad1.token, usuario: 'fantasma', rol: 'Consulta'}); T('editar un usuario inexistente se rechaza', !r.ok, r);
+    // segundo administrador
+    const ad2 = mk('admin2', 'Administrador Dos', 'Administrador');
+    r = E4.post({action: 'usr_editar', token: ad2.token, usuario: 'admin1', rol: 'Supervisor'}); T('un administrador puede degradar a otro administrador', r.ok, r);
+    T('el administrador degradado pierde los permisos de inmediato', E4.post({action: 'usr_listar', token: ad1.token}).code === 'permiso');
+    T('y siempre queda al menos un administrador activo', E4.admin('leerUsuarios_').filter(u => u.rol === 'Administrador' && u.activo).length >= 1);
+    // desbloqueo
+    for (let i = 0; i < 5; i++) E4.post({action: 'login', usuario: 'con1', clave: 'mala' + i});
+    T('tras 5 intentos fallidos el usuario queda bloqueado', /intentos/.test(E4.post({action: 'login', usuario: 'con1', clave: clave0}).error));
+    r = E4.post({action: 'usr_listar', token: ad2.token}); T('la lista lo muestra como bloqueado', r.usuarios.find(u => u.usuario === 'con1').bloqueado === true);
+    r = E4.post({action: 'usr_desbloquear', token: ad2.token, usuario: 'con1'}); T('el administrador lo desbloquea sin cambiarle la clave', r.ok && E4.post({action: 'login', usuario: 'con1', clave: clave0}).ok, r);
+    // auditoría
+    const aud = E4.hojas['Auditoría'].d, acciones = aud.slice(1).map(f => f[2]);
+    T('la auditoría registra crear, restablecer, editar y desbloquear', ['Crear usuario', 'Restablecer clave', 'Editar usuario', 'Desbloquear usuario'].every(a => acciones.includes(a)), acciones);
+    T('cada registro dice quién lo hizo y a quién afectó', aud.slice(1).every(f => /\(/.test(f[1]) && f[3]) && aud[1][1].startsWith('admin1'), aud[1]);
+    T('la auditoría nunca guarda claves ni códigos temporales', codigos.every(c => !JSON.stringify(aud).includes(c)));
+    T('los intentos rechazados (sin permiso) no dejan registros de cambios', !aud.some(f => /intruso/.test(f[3])));
+    r = E4.post({action: 'usr_auditoria', token: ad2.token});
+    T('el administrador consulta el historial de cambios, lo más reciente primero', r.ok && r.registros.length >= 5 && r.registros[0].fecha >= r.registros[r.registros.length - 1].fecha && r.registros.every(x => x.accion && x.admin), r.registros && r.registros.slice(0, 2));
+    T('el historial nunca expone claves ni códigos temporales', codigos.every(c => !JSON.stringify(r).includes(c)));
+    T('un Supervisor NO puede ver el historial', E4.post({action: 'usr_auditoria', token: su1.token}).code === 'permiso');
+    T('sin sesión no hay historial', E4.post({action: 'usr_auditoria', token: 'x.y'}).code === 'sesion');
     console.log(`\n${ok} correctas, ${mal} fallas`); process.exit(mal ? 1 : 0);
   }
 }

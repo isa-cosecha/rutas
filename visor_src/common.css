@@ -93,3 +93,23 @@ dialog.wide{width:min(780px,96vw);max-height:92vh;overflow:auto}
 .admt td{padding:3px 6px;border-bottom:1px solid #26382c}
 .admt td.ok{color:#8fd9a8}.admt td.no{color:#ff9a8c}
 .icoc{width:19px;height:19px;object-fit:contain;display:block}
+/* ---- administración de usuarios ---- */
+dialog.wide.xl{width:min(980px,96vw)}
+.usrnew{display:grid;grid-template-columns:1fr 1.7fr 1fr auto;gap:8px;align-items:end;margin:6px 0}
+.usrnew label{margin:0}
+.usrwrap{overflow:auto;max-height:340px;margin-top:6px}
+.admt.usr td{vertical-align:middle}
+.admt.usr input,.admt.usr select{padding:5px 7px;font-size:13px;min-width:0}
+.admt.usr input.un{width:100%;min-width:150px}
+.admt.usr button{padding:5px 9px;font-size:12.5px}
+.admt.usr tr.inact td{opacity:.62}
+button.ua.on{background:var(--okc);border-color:var(--okc);color:#fff}
+button.ua.off{background:#5b2620;border-color:#8a3a30;color:#ffd9d3}
+.codbox{background:#1a3a28;border:2px solid var(--amber);border-radius:8px;padding:12px 14px;margin:10px 0}
+.codrow{display:flex;gap:12px;align-items:center;margin:6px 0}
+#usrCodV{font:700 32px ui-monospace,Consolas,monospace;letter-spacing:.22em;color:var(--amber)}
+.ptag{display:inline-block;font:600 11px var(--f-head);padding:1px 6px;border-radius:3px;background:#55606a;color:#fff;margin-left:4px}
+.ptag.blq{background:#8a3a30}
+.admt td.si{color:#8fd9a8;text-align:center}.admt td.nop{color:#6b7a70;text-align:center}
+dialog details{margin:10px 0}
+@media (max-width:760px){.usrnew{grid-template-columns:1fr}}

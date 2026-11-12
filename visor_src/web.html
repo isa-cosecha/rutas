@@ -148,7 +148,7 @@ $('gear').onclick=()=>UI.openCfg();
 A.applyFilters(); A.flush(); A.refreshStatus();
 const h=location.hash.replace('#p',''); if(A.byId.has(h)) A.select(h);
 const showWho=()=>{const s=A.auth.sess; $('who').textContent=s?'👤 '+s.nombre+' · '+s.rol:'';};
-showWho(); A.on('login',showWho); A.on('status',showWho);
+showWho(); A.on('login',showWho); A.on('status',showWho); A.on('perfil',showWho);
 </script>
 </body>
 </html>

@@ -768,6 +768,26 @@ dialog.wide{width:min(780px,96vw);max-height:92vh;overflow:auto}
 .admt td{padding:3px 6px;border-bottom:1px solid #26382c}
 .admt td.ok{color:#8fd9a8}.admt td.no{color:#ff9a8c}
 .icoc{width:19px;height:19px;object-fit:contain;display:block}
+/* ---- administración de usuarios ---- */
+dialog.wide.xl{width:min(980px,96vw)}
+.usrnew{display:grid;grid-template-columns:1fr 1.7fr 1fr auto;gap:8px;align-items:end;margin:6px 0}
+.usrnew label{margin:0}
+.usrwrap{overflow:auto;max-height:340px;margin-top:6px}
+.admt.usr td{vertical-align:middle}
+.admt.usr input,.admt.usr select{padding:5px 7px;font-size:13px;min-width:0}
+.admt.usr input.un{width:100%;min-width:150px}
+.admt.usr button{padding:5px 9px;font-size:12.5px}
+.admt.usr tr.inact td{opacity:.62}
+button.ua.on{background:var(--okc);border-color:var(--okc);color:#fff}
+button.ua.off{background:#5b2620;border-color:#8a3a30;color:#ffd9d3}
+.codbox{background:#1a3a28;border:2px solid var(--amber);border-radius:8px;padding:12px 14px;margin:10px 0}
+.codrow{display:flex;gap:12px;align-items:center;margin:6px 0}
+#usrCodV{font:700 32px ui-monospace,Consolas,monospace;letter-spacing:.22em;color:var(--amber)}
+.ptag{display:inline-block;font:600 11px var(--f-head);padding:1px 6px;border-radius:3px;background:#55606a;color:#fff;margin-left:4px}
+.ptag.blq{background:#8a3a30}
+.admt td.si{color:#8fd9a8;text-align:center}.admt td.nop{color:#6b7a70;text-align:center}
+dialog details{margin:10px 0}
+@media (max-width:760px){.usrnew{grid-template-columns:1fr}}
 
 #modeSw{margin-right:auto} dialog .row{flex-wrap:wrap}
 #boot{position:fixed;inset:0;z-index:5000;background:var(--panel);display:grid;place-items:center;padding:24px}
@@ -833,7 +853,7 @@ dialog.wide{width:min(780px,96vw);max-height:92vh;overflow:auto}
     <label>URL de datos en GitHub (carpeta data/)<input id="cfgData" type="url" placeholder="https://raw.githubusercontent.com/usuario/repo/main/data/"></label>
     <label>Token de GitHub (solo si el repositorio es privado)<input id="cfgGh" type="password" autocomplete="off" placeholder="github_pat_…"></label>
   </details>
-  <div class="row"><button id="modeSw" type="button"></button><button id="cfgAdm" type="button" hidden>Administrar capas (QField)</button><button id="cfgReload" type="button">Actualizar datos</button><button id="cfgSync" type="button">Sincronizar ahora</button><button id="cfgCancel" type="button">Cerrar</button><button id="cfgSave" class="primary">Guardar</button></div>
+  <div class="row"><button id="modeSw" type="button"></button><button id="cfgUsr" type="button" hidden>Administrar usuarios</button><button id="cfgAdm" type="button" hidden>Administrar capas (QField)</button><button id="cfgReload" type="button">Actualizar datos</button><button id="cfgSync" type="button">Sincronizar ahora</button><button id="cfgCancel" type="button">Cerrar</button><button id="cfgSave" class="primary">Guardar</button></div>
 </form></dialog>
 
 <dialog id="admDlg" class="wide"><form method="dialog">
@@ -865,6 +885,37 @@ dialog.wide{width:min(780px,96vw);max-height:92vh;overflow:auto}
     </div>
   </div>
   <div class="row"><button id="admClose" type="button">Cerrar</button></div>
+</form></dialog>
+
+<dialog id="usrDlg" class="wide xl"><form method="dialog" id="usrForm">
+  <h3>Usuarios y permisos</h3>
+  <div class="admnote">Solo administradores. Los cambios rigen de inmediato en el servidor. Las claves nunca se muestran: al crear un usuario o restablecer su clave, el sistema genera un <b>código temporal</b> que el usuario cambia al entrar.</div>
+
+  <div id="usrCod" class="codbox" hidden role="status">
+    <div id="usrCodT"></div>
+    <div class="codrow"><code id="usrCodV"></code><button id="usrCodCp" type="button">Copiar</button></div>
+    <div class="admsub">Entrégalo al usuario por un canal seguro (no por el chat de grupo). <b>Se muestra una sola vez.</b> Al entrar con él, el visor le pedirá crear su propia clave.</div>
+    <div class="admrow"><button id="usrCodX" type="button" class="primary">Entendido, ya lo anoté</button></div>
+  </div>
+
+  <div class="admstep"><b>Nuevo usuario</b>
+    <div class="usrnew">
+      <label>Usuario<input id="usrNU" type="text" autocomplete="off" autocapitalize="none" spellcheck="false" maxlength="30" placeholder="ej. jperez"></label>
+      <label>Nombre completo<input id="usrNN" type="text" autocomplete="off" maxlength="80" placeholder="ej. Juan Pérez - Supervisor K4"></label>
+      <label>Rol<select id="usrNR"></select></label>
+      <button id="usrNC" type="button" class="primary">Crear usuario</button>
+    </div>
+    <div id="usrNM" class="admsub" role="alert"></div>
+  </div>
+
+  <div class="admstep">
+    <div class="admrow"><b>Usuarios</b><input id="usrQ" type="search" placeholder="Buscar por usuario, nombre o rol" autocomplete="off" aria-label="Buscar usuario" style="max-width:300px"><span id="usrCnt" class="admsub"></span></div>
+    <div class="usrwrap"><table class="admt usr"><thead><tr><th>Usuario</th><th>Nombre</th><th>Rol</th><th>Estado</th><th>Último ingreso</th><th></th></tr></thead><tbody id="usrT"></tbody></table></div>
+  </div>
+
+  <details id="usrPerm"><summary>Permisos por rol</summary><div id="usrPermT" class="usrwrap"></div></details>
+  <details id="usrAud"><summary>Historial de cambios</summary><div id="usrAudT" class="usrwrap"></div></details>
+  <div class="row"><button id="usrClose" type="button">Cerrar</button></div>
 </form></dialog>
 
 <script>/* @preserve
@@ -1202,6 +1253,9 @@ App = (() => {
   let sess = LS.get('sess', null);                     // {token, exp, user, nombre, rol}
   if (sess && !(sess.token && sess.exp > Date.now())) sess = null;
   const logged = () => !!(sess && sess.token && sess.exp > Date.now());
+  // Permisos que envía el servidor al entrar y en cada sincronización. Respaldo para sesiones guardadas antes de existir esta lista.
+  const PERMISOS_POR_ROL = {Administrador: ['ver', 'responder', 'capas_admin', 'usuarios_admin'], Supervisor: ['ver', 'responder'], Consulta: ['ver']};
+  const puede = p => logged() && (sess.permisos || PERMISOS_POR_ROL[sess.rol] || ['ver']).includes(p);   // la pantalla solo oculta botones; el servidor decide siempre
   const setSess = x => { sess = x; LS.set('sess', x); };
   async function api(action, body = {}, authed = true) {
     if (!cfg.url) return {ok: false, error: 'Falta configurar la URL del servidor de usuarios (Apps Script).'};
@@ -1252,7 +1306,7 @@ App = (() => {
   async function login(usuario, clave) {
     const j = await api('login', {usuario, clave}, false);
     if (!j.ok || j.cambiar) return j;
-    setSess({token: j.token, exp: j.exp, user: j.usuario, nombre: j.nombre, rol: j.rol});
+    setSess({token: j.token, exp: j.exp, user: j.usuario, nombre: j.nombre, rol: j.rol, permisos: j.permisos});
     loadPrefsLocal(); applyPrefs(j.prefs);
     emit('login', sess); flush(); refreshStatus();
     return j;
@@ -1287,14 +1341,14 @@ App = (() => {
       const j = await api('sync');
       if (j.ok) {
         remote = {}; Object.entries(j.status || {}).forEach(([k, v]) => remote[String(k).padStart(5, '0')] = v);
-        if (j.rol && (sess.rol !== j.rol || sess.nombre !== j.nombre)) setSess({...sess, rol: j.rol, nombre: j.nombre});
+        if (j.rol && (sess.rol !== j.rol || sess.nombre !== j.nombre || JSON.stringify(sess.permisos) !== JSON.stringify(j.permisos))) { setSess({...sess, rol: j.rol, nombre: j.nombre, permisos: j.permisos}); emit('perfil', sess); }
         applyPrefs(j.prefs); emit('status');
       }
     } catch {}
   }
   function submit(o, resultado, aspectos, nota, fechaReal, withPos) {
     if (!logged()) { emit('needLogin'); return false; }
-    if (sess.rol === 'Consulta') { emit('toast', 'Tu rol es de consulta: no puede registrar respuestas.'); return false; }
+    if (!puede('responder')) { emit('toast', 'Tu rol es de consulta: no puede registrar respuestas.'); return false; }
     if (resultado === 'Diferente' && nota.trim().length < 5) { emit('toast', 'Agrega la nota de por qué se trabajó diferente.'); return false; }
     const p = withPos && lastPos ? lastPos : null;
     queue.push({id: uuid(), ts: new Date().toISOString(), codigo: o.id, nombre: o.nm, frente: o.fr, semana: o.sem, secuencia: o.sec, fecha_plan: o.fc,
@@ -1392,7 +1446,7 @@ App = (() => {
   }
   function htmlForm(o) {
     const v = valOf(o.id), today = new Date().toISOString().slice(0, 10);
-    if (sess && sess.rol === 'Consulta') return `<div class="vlast">${v ? `${valTag(v)} ${esc(v.u || '')} ${v.t ? esc(String(v.t).slice(0, 16).replace('T', ' ')) : ''}${v.n ? `<div class="vnote">“${esc(v.n)}”</div>` : ''}` : 'Sin respuesta registrada.'}</div><div class="ok">Tu rol es de consulta: puedes ver rutas y estados, pero no registrar respuestas.</div>`;
+    if (sess && !puede('responder')) return `<div class="vlast">${v ? `${valTag(v)} ${esc(v.u || '')} ${v.t ? esc(String(v.t).slice(0, 16).replace('T', ' ')) : ''}${v.n ? `<div class="vnote">“${esc(v.n)}”</div>` : ''}` : 'Sin respuesta registrada.'}</div><div class="ok">Tu rol es de consulta: puedes ver rutas y estados, pero no registrar respuestas.</div>`;
     return `<div class="vform">
       ${v ? `<div class="vlast">${valTag(v)} ${esc(v.u || '')} ${v.t ? esc(String(v.t).slice(0, 16).replace('T', ' ')) : ''}${v.n ? `<div class="vnote">“${esc(v.n)}”</div>` : ''}</div>` : ''}
       <div class="vbtns"><button type="button" class="vb vok" data-r="Según lo planificado">Se trabajó según lo planificado</button>
@@ -1424,7 +1478,8 @@ App = (() => {
 
   return {META: META || {}, D, byId, F, CAT, PCAT, FLAGS, vis, cfg, esc, fmt, init: initMap, select, step, fitLocal, fitAll, applyFilters, options, csv, flush, refreshStatus,
     saveCfg, locate, on, savePrefs, hasFilters, clearFilters, CAPS, capasCerca, setCapas, cercaCapa, _t: {fraccionSobre, distPlantio, capaBBox, reglaSobre}, valOf, valTag, srcTag, htmlKpis, htmlDetail, htmlPanelCapas, bindCapas, htmlForm, bind, kmFlag,
-    auth: {logged, login, logout, changePassword, get sess() { return sess; }, canSubmit: () => logged() && sess.rol !== 'Consulta'},
+    auth: {logged, login, logout, changePassword, get sess() { return sess; }, puede, canSubmit: () => puede('responder')},
+    api: (accion, datos) => api(accion, datos || {}, true),
     get filtered() { return filtered; }, get cur() { return cur; }, get queueLen() { return queue.length; }, get map() { return map; }};
 })();
 return App;
@@ -1486,7 +1541,7 @@ UI = (() => {
     const s = auth.sess;
     $('cfgMsg').textContent = m || '';
     $('cfgWho').innerHTML = s ? `Usuario: <b>${A.esc(s.nombre)}</b> (${A.esc(s.user)}) · Rol: <b>${A.esc(s.rol)}</b>` : 'Sin sesión';
-    $('cfgAdm').hidden = !(s && s.rol === 'Administrador');
+    $('cfgAdm').hidden = !A.auth.puede('capas_admin'); $('cfgUsr').hidden = !A.auth.puede('usuarios_admin');
     $('cfgData').value = A.cfg.data || ''; $('cfgGh').value = A.cfg.gh || ''; $('cfgUrl').value = A.cfg.url || '';
     const x = A.META; $('cfgVer').textContent = x.version ? `Datos versión ${x.version}, generados ${String(x.generado || '').slice(0, 16).replace('T', ' ')} UTC${x.origen ? ' · ' + x.origen : ''}${x.fuentes ? ' · Programa: ' + x.fuentes.programa : ''}${x.capas ? ' · Capas de apoyo ' + x.capas.version : ''}` : '';
     $('cfgQ').textContent = A.queueLen ? `${A.queueLen} respuesta(s) pendiente(s) de envío.` : 'Sin respuestas pendientes.';
@@ -1515,6 +1570,7 @@ UI = (() => {
       $('pwDlg').close(); toast(l.ok ? 'Clave cambiada' : 'Clave cambiada. Ingresa de nuevo.');
     } catch { m('Sin conexión con el servidor.'); } };
   if (typeof initAdmin === 'function') initAdmin();   // herramientas de administrador (admin_capas.js)
+  if (typeof initAdminUsuarios === 'function') initAdminUsuarios();   // administración de usuarios (admin_usuarios.js)
   return {toast, openCfg, ensureLogin};
 })();
 }
@@ -1793,7 +1849,7 @@ const AdminCapas = (() => {
 /* ---------- interfaz del diálogo (sólo administradores) ---------- */
 function initAdmin() {
   const $ = id => document.getElementById(id), A = App;
-  const esAdmin = () => A.auth.logged() && A.auth.sess.rol === 'Administrador';
+  const esAdmin = () => A.auth.puede('capas_admin');
   const fmtMB = n => (n / 1e6).toFixed(n > 1e7 ? 0 : 1) + ' MB';
   let cfgCapas = null, mapa = null, res = null, texto = null;
   try { cfgCapas = JSON.parse(document.getElementById('capasCfg').textContent); } catch {}
@@ -1866,6 +1922,145 @@ function initAdmin() {
   };
 }
 </script>
+<script>/* Administración de usuarios, roles y claves dentro de la aplicación (solo con el permiso "usuarios_admin").
+ * La pantalla solo muestra u oculta controles: TODA validación y todo permiso se aplican en el servidor (Apps Script),
+ * que vuelve a comprobar la sesión y el rol en cada acción. Las claves nunca llegan al navegador; al crear o
+ * restablecer, el servidor devuelve un código temporal de un solo uso (el usuario debe cambiarlo al entrar). */
+function initAdminUsuarios() {
+  const $ = id => document.getElementById(id), A = App, esc = A.esc;
+  const puede = () => A.auth.puede('usuarios_admin');
+  let lista = [], roles = ['Administrador', 'Supervisor', 'Consulta'], permisos = {}, etiquetas = {}, yo = '', cargando = false;
+  const fecha = iso => { if (!iso) return '—'; const d = new Date(iso); return isNaN(d) ? '—' : d.toLocaleString('es-NI', {dateStyle: 'short', timeStyle: 'short'}); };
+  const aviso = t => { const el = $('usrNM'); el.textContent = t || ''; };
+
+  /** Llama al servidor. Devuelve la respuesta si ok; si no, muestra el motivo y devuelve null. */
+  async function llamar(accion, datos) {
+    try {
+      const j = await A.api(accion, datos);
+      if (j && j.ok) return j;
+      if (j && j.code !== 'sesion') UI.toast(j.error || 'No se pudo completar la acción.');
+      return null;
+    } catch { UI.toast('Sin conexión con el servidor de usuarios.'); return null; }
+  }
+
+  function abrir() {
+    if (!puede()) { UI.toast('No tienes permiso para administrar usuarios.'); return; }
+    $('usrCod').hidden = true; aviso(''); $('usrQ').value = '';
+    $('usrDlg').showModal(); cargar();
+  }
+  $('cfgUsr').onclick = e => { e.preventDefault(); $('cfgDlg').close(); abrir(); };
+  $('usrClose').onclick = e => { e.preventDefault(); $('usrDlg').close(); };
+  $('usrForm').onsubmit = e => e.preventDefault();      // Enter dentro de los campos no debe cerrar el diálogo
+
+  async function cargar() {
+    if (cargando) return; cargando = true;
+    const sc = $('usrDlg').querySelector('.usrwrap'), y = sc ? sc.scrollTop : 0;
+    const j = await llamar('usr_listar', {});
+    cargando = false; if (!j) return;
+    lista = j.usuarios; roles = j.roles; permisos = j.permisos; etiquetas = j.etiquetas; yo = A.auth.sess.user;
+    const sel = $('usrNR'), previo = sel.value;
+    sel.innerHTML = roles.map(r => `<option${r === (previo || 'Supervisor') ? ' selected' : ''}>${esc(r)}</option>`).join('');
+    pintarLista(); pintarPermisos();
+    if (sc) sc.scrollTop = y;
+    if ($('usrAud').open) cargarAuditoria();
+  }
+
+  function pintarLista() {
+    const q = $('usrQ').value.trim().toLowerCase();
+    const v = lista.filter(u => !q || (u.usuario + ' ' + u.nombre + ' ' + u.rol).toLowerCase().includes(q));
+    $('usrCnt').textContent = `${v.length} de ${lista.length} usuarios · ${lista.filter(u => u.activo).length} activos`;
+    $('usrT').innerHTML = v.length ? v.map(u => {
+      const soy = u.usuario === yo;
+      return `<tr data-u="${esc(u.usuario)}" class="${u.activo ? '' : 'inact'}">
+        <td><b>${esc(u.usuario)}</b>${soy ? ' <span class="tag t27">tú</span>' : ''}${u.pendiente ? ' <span class="ptag" title="Aún no cambió su código temporal">Pendiente</span>' : ''}${u.bloqueado ? ' <span class="ptag blq" title="Bloqueado por intentos fallidos">Bloqueado</span>' : ''}</td>
+        <td><input class="un" type="text" maxlength="80" value="${esc(u.nombre)}" aria-label="Nombre de ${esc(u.usuario)}"></td>
+        <td><select class="ur" aria-label="Rol de ${esc(u.usuario)}" ${soy ? 'disabled title="No puedes cambiar tu propio rol"' : ''}>${roles.map(r => `<option${r === u.rol ? ' selected' : ''}>${esc(r)}</option>`).join('')}</select></td>
+        <td><button type="button" class="ua ${u.activo ? 'on' : 'off'}" ${soy ? 'disabled title="No puedes desactivarte a ti mismo"' : ''}>${u.activo ? 'Activo' : 'Inactivo'}</button></td>
+        <td>${fecha(u.ultimo)}</td>
+        <td style="white-space:nowrap"><button type="button" class="urs" ${soy ? 'disabled title="Tu propia clave se cambia en Mi cuenta > Cambiar clave"' : ''}>Restablecer clave</button>${u.bloqueado ? ' <button type="button" class="udb">Desbloquear</button>' : ''}</td></tr>`;
+    }).join('') : '<tr><td colspan="6" style="color:var(--mute);padding:10px">Sin coincidencias.</td></tr>';
+  }
+
+  function pintarPermisos() {
+    const cuenta = r => lista.filter(u => u.rol === r && u.activo).length, claves = Object.keys(etiquetas);
+    $('usrPermT').innerHTML = `<table class="admt"><thead><tr><th>Permiso</th>${roles.map(r => `<th style="text-align:center">${esc(r)}<div class="admsub" style="margin:0">${cuenta(r)} activos</div></th>`).join('')}</tr></thead><tbody>
+      ${claves.map(k => `<tr><td>${esc(etiquetas[k])}</td>${roles.map(r => (permisos[r] || []).includes(k) ? '<td class="si">✓</td>' : '<td class="nop">—</td>').join('')}</tr>`).join('')}</tbody></table>
+      <div class="admsub">Los permisos los define el rol y se aplican en el servidor. Para dar o quitar permisos a una persona, cámbiale el rol en la tabla de arriba.</div>`;
+  }
+
+  async function cargarAuditoria() {
+    const j = await llamar('usr_auditoria', {}); if (!j) return;
+    $('usrAudT').innerHTML = j.registros.length ? `<table class="admt"><thead><tr><th>Fecha</th><th>Administrador</th><th>Acción</th><th>Usuario</th><th>Detalle</th></tr></thead><tbody>
+      ${j.registros.map(r => `<tr><td style="white-space:nowrap">${fecha(r.fecha)}</td><td>${esc(r.admin)}</td><td>${esc(r.accion)}</td><td>${esc(r.usuario)}</td><td>${esc(r.detalle)}</td></tr>`).join('')}</tbody></table>`
+      : '<div class="admsub">Aún no hay cambios registrados.</div>';
+  }
+  $('usrAud').addEventListener('toggle', () => { if ($('usrAud').open) cargarAuditoria(); });
+
+  // ---- código temporal (se muestra una sola vez) ----
+  function mostrarCodigo(titulo, codigo) {
+    $('usrCodT').innerHTML = titulo; $('usrCodV').textContent = codigo; $('usrCod').hidden = false;
+    $('usrCod').scrollIntoView({block: 'nearest'});
+  }
+  $('usrCodX').onclick = () => { $('usrCod').hidden = true; $('usrCodV').textContent = ''; };
+  $('usrCodCp').onclick = async () => {
+    const t = $('usrCodV').textContent;
+    try { await navigator.clipboard.writeText(t); UI.toast('Código copiado'); }
+    catch { const r = document.createRange(); r.selectNodeContents($('usrCodV')); const s = getSelection(); s.removeAllRanges(); s.addRange(r); UI.toast('Selecciona y copia el código'); }
+  };
+
+  // ---- crear ----
+  async function crear() {
+    const u = $('usrNU').value.trim().toLowerCase(), n = $('usrNN').value.trim(), r = $('usrNR').value;
+    if (!/^[a-z0-9._-]{3,30}$/.test(u)) return aviso('Usuario inválido: 3 a 30 caracteres (letras, números, punto, guion o guion bajo), sin espacios.');
+    if (!n) return aviso('Escribe el nombre completo de la persona.');
+    if (r === 'Administrador' && !confirm(`¿Dar permisos de ADMINISTRADOR a ${n}? Podrá crear usuarios, cambiar roles y restablecer claves.`)) return;
+    aviso(''); $('usrNC').disabled = true;
+    const j = await llamar('usr_crear', {usuario: u, nombre: n, rol: r});
+    $('usrNC').disabled = false; if (!j) return;
+    $('usrNU').value = $('usrNN').value = '';
+    mostrarCodigo(`Usuario creado: <b>${esc(j.usuario)}</b> (${esc(r)}). Código temporal:`, j.codigo);
+    cargar();
+  }
+  $('usrNC').onclick = crear;
+  [$('usrNU'), $('usrNN')].forEach(el => el.addEventListener('keydown', e => { if (e.key === 'Enter') { e.preventDefault(); crear(); } }));
+  $('usrQ').addEventListener('input', pintarLista);
+
+  // ---- acciones por fila ----
+  const fila = el => { const tr = el.closest('tr[data-u]'); return tr ? lista.find(u => u.usuario === tr.dataset.u) : null; };
+  $('usrT').addEventListener('change', async e => {
+    const u = fila(e.target); if (!u) return;
+    if (e.target.classList.contains('ur')) {
+      const rol = e.target.value;
+      if (!confirm(`¿Cambiar el rol de ${u.nombre} de ${u.rol} a ${rol}?\n\nRige de inmediato, sin que la persona tenga que salir y entrar.`)) { e.target.value = u.rol; return; }
+      const j = await llamar('usr_editar', {usuario: u.usuario, rol});
+      if (!j) e.target.value = u.rol; else UI.toast(`Rol de ${u.usuario}: ${rol}`);
+      cargar();
+    } else if (e.target.classList.contains('un')) {
+      const nombre = e.target.value.trim();
+      if (!nombre || nombre === u.nombre) { e.target.value = u.nombre; return; }
+      const j = await llamar('usr_editar', {usuario: u.usuario, nombre});
+      if (!j) e.target.value = u.nombre; else UI.toast('Nombre actualizado');
+      cargar();
+    }
+  });
+  $('usrT').addEventListener('keydown', e => { if (e.key === 'Enter' && e.target.classList.contains('un')) { e.preventDefault(); e.target.blur(); } });
+  $('usrT').addEventListener('click', async e => {
+    const b = e.target.closest('button'); if (!b) return; const u = fila(b); if (!u) return;
+    if (b.classList.contains('ua')) {
+      const activar = !u.activo;
+      if (!activar && !confirm(`¿Desactivar a ${u.nombre}?\n\nPerderá el acceso de inmediato. Sus respuestas ya registradas se conservan.`)) return;
+      const j = await llamar('usr_editar', {usuario: u.usuario, activo: activar}); if (j) UI.toast(`${u.usuario}: ${activar ? 'activado' : 'desactivado'}`); cargar();
+    } else if (b.classList.contains('urs')) {
+      if (!confirm(`¿Restablecer la clave de ${u.nombre}?\n\nSu clave actual dejará de servir, se cerrarán sus sesiones abiertas y recibirá un código temporal para crear una clave nueva.`)) return;
+      const j = await llamar('usr_reiniciar', {usuario: u.usuario});
+      if (j) mostrarCodigo(`Clave restablecida para <b>${esc(j.usuario)}</b>. Código temporal:`, j.codigo);
+      cargar();
+    } else if (b.classList.contains('udb')) {
+      const j = await llamar('usr_desbloquear', {usuario: u.usuario}); if (j) UI.toast(`${u.usuario} desbloqueado`); cargar();
+    }
+  });
+}
+</script>
 <script type="application/json" id="capasCfg">{"_nota": "Cada capa se busca por nombre de archivo (sin extensión) dentro de la carpeta del proyecto QField. 'radio' = metros alrededor del plantío seleccionado. 'vinculo' = campo que relaciona la entidad con el código del plantío (se muestra aunque quede fuera del radio). Los ids deben existir también en apps_script/Codigo.gs (lista CAPAS) para guardarse en el perfil de usuario. 'sobre' = mostrar solo lo que cae sobre el plantío seleccionado (tolerancia_m por diferencias de digitalización; minimo = fracción del trazo que debe estar dentro); en ese caso no se usa 'radio' ni 'vinculo'.", "gap_contorno_m": 40, "capas": [{"id": "pozos", "nombre": "Pozos", "archivo": "Pozos", "tipo": "punto", "radio": 500, "defecto": true, "estilo": {"color": "#5a5551", "relleno": "#fab07c", "r": 6, "peso": 2.5}, "titulo": "nombre del", "popup": [["nombre del", "Nombre"], ["id ana", "ID ANA"], ["region", "Región"], ["tipo de ri", "Tipo de riego"], ["uso", "Uso"], ["compania", "Compañía"], ["municipio", "Municipio"], ["subcuenca", "Subcuenca"], ["msnm", "msnm"]]}, {"id": "motores", "nombre": "Motores eléctricos", "archivo": "Motores Electricos", "tipo": "punto", "radio": 500, "defecto": false, "estilo": {"color": "#ffee2f", "relleno": "#becf50", "r": 6, "peso": 2.5}, "titulo": "nombre del", "popup": [["nombre del", "Nombre"], ["id ana", "ID ANA"], ["region", "Región"], ["tipo de ri", "Tipo de riego"], ["uso", "Uso"], ["compania", "Compañía"], ["municipio", "Municipio"], ["msnm", "msnm"]]}, {"id": "valvulas", "nombre": "Válvulas de goteo", "archivo": "Valvulas Goteo", "tipo": "punto", "radio": 120, "defecto": true, "vinculo": "lote", "estilo": {"color": "#232323", "relleno": "#4787e7", "r": 5, "peso": 1.2, "icono": "valvula"}, "titulo": "obstaculo", "popup": [["obstaculo", "Tipo"], ["lote", "Lote"], ["finca", "Finca"], ["region", "Región"], ["tipo de ri", "Tipo de riego"], ["rtk", "RTK"], ["ingresado", "Ingresado"]]}, {"id": "obstaculos", "nombre": "Otros obstáculos de riego", "archivo": "Obstaculos_Varios", "tipo": "punto", "radio": 120, "defecto": false, "vinculo": "lote", "excluir": {"campo": "obstaculo", "valores": ["Valvula Hidraulica"], "motivo": "ya están en la capa Válvulas de goteo"}, "categoria": {"campo": "obstaculo", "colores": {"Lavado": "#7dd3fc", "Hidrante": "#ef4444", "Poste Electrico": "#fbe625", "Valvula de Aire": "#2dd4bf", "CropX": "#a78bfa"}, "otro": "#d1d5db"}, "estilo": {"color": "#232323", "relleno": "#d1d5db", "r": 4, "peso": 1}, "titulo": "obstaculo", "popup": [["obstaculo", "Tipo"], ["nombre obs", "Nombre"], ["lote", "Lote"], ["finca", "Finca"], ["region", "Región"], ["tipo de ri", "Tipo de riego"], ["rtk", "RTK"], ["ingresado", "Ingresado"]]}, {"id": "postes", "nombre": "Postes eléctricos", "archivo": "Postes Electricos", "tipo": "punto", "radio": 150, "defecto": true, "estilo": {"color": "#000000", "relleno": "#fbe625", "r": 5, "peso": 1.2, "icono": "poste"}, "titulo": "name", "popup": [["name", "Identificador"]]}, {"id": "rios", "nombre": "Ríos", "archivo": "Rios Occidente", "tipo": "linea", "radio": 300, "defecto": true, "simplificar_m": 3, "estilo": {"color": "#23cdff", "peso": 3}, "titulo": "name", "popup": [["name", "Nombre"], ["waterway", "Tipo"]]}, {"id": "vial", "nombre": "Red vial", "archivo": "Red Vial", "tipo": "linea", "radio": 150, "defecto": false, "simplificar_m": 2, "categoria": {"campo": "categoria", "colores": {"principal": "#fd0613", "alterna": "#d06106", "terciario": "#f5de08"}, "otro": "#9ca3af"}, "estilo": {"color": "#f5de08", "peso": 3}, "titulo": "categoria", "popup": [["categoria", "Categoría"], ["tipo", "Tipo"], ["vehiculos", "Vehículos"], ["nota", "Nota"], ["dist (km)", "Dist (km)"], ["rutas", "Ruta"]]}, {"id": "quemaP", "nombre": "Límites de quema (polígonos)", "archivo": "Limites_Quemas_P", "tipo": "poligono", "radio": 60, "defecto": true, "vinculo": "codigo", "simplificar_m": 1.5, "estilo": {"color": "#fbe625", "relleno": "#fbe625", "peso": 2, "dash": "6 4", "opacidad": 0.1}, "titulo": "nombre", "popup": [["nombre", "Plantío"], ["codigo", "Código"], ["cuadro", "Cuadro"], ["estado", "Estado"], ["region", "Región"], ["propietari", "Propietario"], ["variedad", "Variedad"], ["area_agric", "Área agrícola (ha)"], ["zafra", "Zafra"]], "sobre": {"tolerancia_m": 5, "minimo": 0.5}}, {"id": "quemaAC", "nombre": "Contorno de quemas (AC)", "archivo": "Limites_Quemas", "tipo": "contorno", "radio": 60, "defecto": true, "vinculo": "codigo", "agrupar": ["codigo", "cuadro"], "orden": "id", "simplificar_m": 1.5, "estilo": {"color": "#fbe625", "peso": 2, "dash": "2 5"}, "titulo": "nombre", "popup": [["nombre", "Plantío"], ["codigo", "Código"], ["cuadro", "Cuadro"], ["estado", "Estado"], ["region", "Región"], ["propietari", "Propietario"], ["variedad", "Variedad"], ["zafra", "Zafra"]], "sobre": {"tolerancia_m": 5, "minimo": 0.5}}, {"id": "quemaPV", "nombre": "Quemas de proveedores", "archivo": "Limites_Quemas_Proveedores", "tipo": "contorno", "radio": 60, "defecto": true, "vinculo": "codigo", "agrupar": ["codigo", "cuadro"], "simplificar_m": 1.5, "estilo": {"color": "#ff7f00", "peso": 2, "dash": "2 5"}, "titulo": "nombre", "popup": [["nombre", "Plantío"], ["codigo", "Código"], ["cuadro", "Cuadro"], ["estado", "Estado"], ["region", "Región"], ["propietari", "Propietario"], ["variedad", "Variedad"], ["zafra", "Zafra"]], "sobre": {"tolerancia_m": 5, "minimo": 0.5}}, {"id": "aa", "nombre": "Áreas a autorizar (AA)", "archivo": "Limites_Quemas_Proveedores_AAutorizar", "tipo": "contorno", "radio": 60, "defecto": false, "agrupar": [], "simplificar_m": 1.5, "estilo": {"color": "#54b04a", "peso": 2, "dash": "2 5"}, "titulo": "departamen", "popup": [["departamen", "Departamento"]], "sobre": {"tolerancia_m": 5, "minimo": 0.5}}]}</script>
 <script type="text/plain" id="jsWeb">
 const $=id=>document.getElementById(id), A=App;
@@ -1934,7 +2129,7 @@ $('gear').onclick=()=>UI.openCfg();
 A.applyFilters(); A.flush(); A.refreshStatus();
 const h=location.hash.replace('#p',''); if(A.byId.has(h)) A.select(h);
 const showWho=()=>{const s=A.auth.sess; $('who').textContent=s?'👤 '+s.nombre+' · '+s.rol:'';};
-showWho(); A.on('login',showWho); A.on('status',showWho);
+showWho(); A.on('login',showWho); A.on('status',showWho); A.on('perfil',showWho);
 </script>
 <script type="text/plain" id="jsMovil">
 const $=id=>document.getElementById(id), A=App, sh=$('sheet');

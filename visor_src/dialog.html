@@ -40,7 +40,7 @@
     <label>URL de datos en GitHub (carpeta data/)<input id="cfgData" type="url" placeholder="https://raw.githubusercontent.com/usuario/repo/main/data/"></label>
     <label>Token de GitHub (solo si el repositorio es privado)<input id="cfgGh" type="password" autocomplete="off" placeholder="github_pat_…"></label>
   </details>
-  <div class="row"><button id="modeSw" type="button"></button><button id="cfgAdm" type="button" hidden>Administrar capas (QField)</button><button id="cfgReload" type="button">Actualizar datos</button><button id="cfgSync" type="button">Sincronizar ahora</button><button id="cfgCancel" type="button">Cerrar</button><button id="cfgSave" class="primary">Guardar</button></div>
+  <div class="row"><button id="modeSw" type="button"></button><button id="cfgUsr" type="button" hidden>Administrar usuarios</button><button id="cfgAdm" type="button" hidden>Administrar capas (QField)</button><button id="cfgReload" type="button">Actualizar datos</button><button id="cfgSync" type="button">Sincronizar ahora</button><button id="cfgCancel" type="button">Cerrar</button><button id="cfgSave" class="primary">Guardar</button></div>
 </form></dialog>
 
 <dialog id="admDlg" class="wide"><form method="dialog">
@@ -72,4 +72,35 @@
     </div>
   </div>
   <div class="row"><button id="admClose" type="button">Cerrar</button></div>
+</form></dialog>
+
+<dialog id="usrDlg" class="wide xl"><form method="dialog" id="usrForm">
+  <h3>Usuarios y permisos</h3>
+  <div class="admnote">Solo administradores. Los cambios rigen de inmediato en el servidor. Las claves nunca se muestran: al crear un usuario o restablecer su clave, el sistema genera un <b>código temporal</b> que el usuario cambia al entrar.</div>
+
+  <div id="usrCod" class="codbox" hidden role="status">
+    <div id="usrCodT"></div>
+    <div class="codrow"><code id="usrCodV"></code><button id="usrCodCp" type="button">Copiar</button></div>
+    <div class="admsub">Entrégalo al usuario por un canal seguro (no por el chat de grupo). <b>Se muestra una sola vez.</b> Al entrar con él, el visor le pedirá crear su propia clave.</div>
+    <div class="admrow"><button id="usrCodX" type="button" class="primary">Entendido, ya lo anoté</button></div>
+  </div>
+
+  <div class="admstep"><b>Nuevo usuario</b>
+    <div class="usrnew">
+      <label>Usuario<input id="usrNU" type="text" autocomplete="off" autocapitalize="none" spellcheck="false" maxlength="30" placeholder="ej. jperez"></label>
+      <label>Nombre completo<input id="usrNN" type="text" autocomplete="off" maxlength="80" placeholder="ej. Juan Pérez - Supervisor K4"></label>
+      <label>Rol<select id="usrNR"></select></label>
+      <button id="usrNC" type="button" class="primary">Crear usuario</button>
+    </div>
+    <div id="usrNM" class="admsub" role="alert"></div>
+  </div>
+
+  <div class="admstep">
+    <div class="admrow"><b>Usuarios</b><input id="usrQ" type="search" placeholder="Buscar por usuario, nombre o rol" autocomplete="off" aria-label="Buscar usuario" style="max-width:300px"><span id="usrCnt" class="admsub"></span></div>
+    <div class="usrwrap"><table class="admt usr"><thead><tr><th>Usuario</th><th>Nombre</th><th>Rol</th><th>Estado</th><th>Último ingreso</th><th></th></tr></thead><tbody id="usrT"></tbody></table></div>
+  </div>
+
+  <details id="usrPerm"><summary>Permisos por rol</summary><div id="usrPermT" class="usrwrap"></div></details>
+  <details id="usrAud"><summary>Historial de cambios</summary><div id="usrAudT" class="usrwrap"></div></details>
+  <div class="row"><button id="usrClose" type="button">Cerrar</button></div>
 </form></dialog>

@@ -327,6 +327,9 @@ App = (() => {
   let sess = LS.get('sess', null);                     // {token, exp, user, nombre, rol}
   if (sess && !(sess.token && sess.exp > Date.now())) sess = null;
   const logged = () => !!(sess && sess.token && sess.exp > Date.now());
+  // Permisos que envía el servidor al entrar y en cada sincronización. Respaldo para sesiones guardadas antes de existir esta lista.
+  const PERMISOS_POR_ROL = {Administrador: ['ver', 'responder', 'capas_admin', 'usuarios_admin'], Supervisor: ['ver', 'responder'], Consulta: ['ver']};
+  const puede = p => logged() && (sess.permisos || PERMISOS_POR_ROL[sess.rol] || ['ver']).includes(p);   // la pantalla solo oculta botones; el servidor decide siempre
   const setSess = x => { sess = x; LS.set('sess', x); };
   async function api(action, body = {}, authed = true) {
     if (!cfg.url) return {ok: false, error: 'Falta configurar la URL del servidor de usuarios (Apps Script).'};
@@ -377,7 +380,7 @@ App = (() => {
   async function login(usuario, clave) {
     const j = await api('login', {usuario, clave}, false);
     if (!j.ok || j.cambiar) return j;
-    setSess({token: j.token, exp: j.exp, user: j.usuario, nombre: j.nombre, rol: j.rol});
+    setSess({token: j.token, exp: j.exp, user: j.usuario, nombre: j.nombre, rol: j.rol, permisos: j.permisos});
     loadPrefsLocal(); applyPrefs(j.prefs);
     emit('login', sess); flush(); refreshStatus();
     return j;
@@ -412,14 +415,14 @@ App = (() => {
       const j = await api('sync');
       if (j.ok) {
         remote = {}; Object.entries(j.status || {}).forEach(([k, v]) => remote[String(k).padStart(5, '0')] = v);
-        if (j.rol && (sess.rol !== j.rol || sess.nombre !== j.nombre)) setSess({...sess, rol: j.rol, nombre: j.nombre});
+        if (j.rol && (sess.rol !== j.rol || sess.nombre !== j.nombre || JSON.stringify(sess.permisos) !== JSON.stringify(j.permisos))) { setSess({...sess, rol: j.rol, nombre: j.nombre, permisos: j.permisos}); emit('perfil', sess); }
         applyPrefs(j.prefs); emit('status');
       }
     } catch {}
   }
   function submit(o, resultado, aspectos, nota, fechaReal, withPos) {
     if (!logged()) { emit('needLogin'); return false; }
-    if (sess.rol === 'Consulta') { emit('toast', 'Tu rol es de consulta: no puede registrar respuestas.'); return false; }
+    if (!puede('responder')) { emit('toast', 'Tu rol es de consulta: no puede registrar respuestas.'); return false; }
     if (resultado === 'Diferente' && nota.trim().length < 5) { emit('toast', 'Agrega la nota de por qué se trabajó diferente.'); return false; }
     const p = withPos && lastPos ? lastPos : null;
     queue.push({id: uuid(), ts: new Date().toISOString(), codigo: o.id, nombre: o.nm, frente: o.fr, semana: o.sem, secuencia: o.sec, fecha_plan: o.fc,
@@ -517,7 +520,7 @@ App = (() => {
   }
   function htmlForm(o) {
     const v = valOf(o.id), today = new Date().toISOString().slice(0, 10);
-    if (sess && sess.rol === 'Consulta') return `<div class="vlast">${v ? `${valTag(v)} ${esc(v.u || '')} ${v.t ? esc(String(v.t).slice(0, 16).replace('T', ' ')) : ''}${v.n ? `<div class="vnote">“${esc(v.n)}”</div>` : ''}` : 'Sin respuesta registrada.'}</div><div class="ok">Tu rol es de consulta: puedes ver rutas y estados, pero no registrar respuestas.</div>`;
+    if (sess && !puede('responder')) return `<div class="vlast">${v ? `${valTag(v)} ${esc(v.u || '')} ${v.t ? esc(String(v.t).slice(0, 16).replace('T', ' ')) : ''}${v.n ? `<div class="vnote">“${esc(v.n)}”</div>` : ''}` : 'Sin respuesta registrada.'}</div><div class="ok">Tu rol es de consulta: puedes ver rutas y estados, pero no registrar respuestas.</div>`;
     return `<div class="vform">
       ${v ? `<div class="vlast">${valTag(v)} ${esc(v.u || '')} ${v.t ? esc(String(v.t).slice(0, 16).replace('T', ' ')) : ''}${v.n ? `<div class="vnote">“${esc(v.n)}”</div>` : ''}</div>` : ''}
       <div class="vbtns"><button type="button" class="vb vok" data-r="Según lo planificado">Se trabajó según lo planificado</button>
@@ -549,7 +552,8 @@ App = (() => {
 
   return {META: META || {}, D, byId, F, CAT, PCAT, FLAGS, vis, cfg, esc, fmt, init: initMap, select, step, fitLocal, fitAll, applyFilters, options, csv, flush, refreshStatus,
     saveCfg, locate, on, savePrefs, hasFilters, clearFilters, CAPS, capasCerca, setCapas, cercaCapa, _t: {fraccionSobre, distPlantio, capaBBox, reglaSobre}, valOf, valTag, srcTag, htmlKpis, htmlDetail, htmlPanelCapas, bindCapas, htmlForm, bind, kmFlag,
-    auth: {logged, login, logout, changePassword, get sess() { return sess; }, canSubmit: () => logged() && sess.rol !== 'Consulta'},
+    auth: {logged, login, logout, changePassword, get sess() { return sess; }, puede, canSubmit: () => puede('responder')},
+    api: (accion, datos) => api(accion, datos || {}, true),
     get filtered() { return filtered; }, get cur() { return cur; }, get queueLen() { return queue.length; }, get map() { return map; }};
 })();
 return App;

@@ -104,3 +104,12 @@ Combustible, recorrido de motos, seguimiento de administradores y análisis de t
 - **Sin conexión:** los registros se guardan en el teléfono y se envían solos; cada uno lleva un identificador único (`instanceID`), así un reenvío nunca duplica.
 - **Catálogos** (zafras, frentes, administradores, equipos, operadores, plantíos): salen de `Archivo_Maestros` y del libro ATS; se guardan en el teléfono y se borran al cerrar sesión.
 - Guía de migración y de puesta en marcha: `LEEME_Migracion.md` (entregada aparte del repositorio).
+
+## Programa de corte en Google Sheets
+
+El programa de corte vive en la hoja **`Programa de Corte`** de `Archivo_Maestros`: una fila por plantío y zafra (columna *Zafra*), con **todas** las columnas del programa (frente, fecha de corte, semana, secuencia, ha, toneladas, etc.) y una columna *Borrador* con su etiqueta. **El mapa y el ATS leen de ahí.**
+
+- **Mapa:** al entrar toma el programa de la hoja y lo aplica sobre cada plantío (frente, fecha, semana, secuencia, ha, toneladas…). Si no hay conexión usa el último que leyó. El repositorio sigue aportando la geometría y las rutas.
+- **ATS:** lista los plantíos del programa con su frente, semana, fecha de corte y secuencia; al elegir uno completa el frente. Si se abre desde la ficha de un plantío en el mapa, ya viene elegido.
+- **Cargar un borrador nuevo:** pegar el Excel del programa en la hoja `Programa nuevo` de `Archivo_Maestros` y ejecutar el menú *Plataforma de campo → Cargar programa de corte*. Informa cuántos plantíos son nuevos, cuántos ya no están y cuántos cambiaron de fecha, frente o semana; deja el programa anterior en la hoja `Programa respaldo`; y no carga nada si encuentra errores (códigos repetidos, sin fecha, sin frente).
+- **Cuándo sí hay que subir algo a GitHub:** solo cuando se agregan plantíos nuevos (necesitan polígono) o cambia el mapeo. Para cambiar frente, fecha o semana basta la hoja.

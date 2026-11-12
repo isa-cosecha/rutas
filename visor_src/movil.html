@@ -91,8 +91,10 @@ const $=id=>document.getElementById(id), A=App, sh=$('sheet');
 const setH=()=>document.documentElement.style.setProperty('--sheetH',(sh.classList.contains('peek')||sh.classList.contains('full'))?Math.min(sh.offsetHeight,innerHeight*.5)+'px':'0px');
 A.init('map',()=>{ const cap=$('capSheet')&&!$('capSheet').hidden?$('capSheet').offsetHeight:0, ficha=(sh.classList.contains('peek')||sh.classList.contains('full'))?Math.min(sh.offsetHeight,innerHeight*.45):0;
   return {paddingTopLeft:[20,80],paddingBottomRight:[20,Math.max(cap,ficha)+20]}; });
-A.options('fr').forEach(v=>$('fFr').add(new Option('Frente '+v,v)));
-A.options('sem').forEach(v=>$('fSem').add(new Option('Semana '+v,String(v))));
+function fillOpts(){ const fr=$('fFr'), se=$('fSem'), vf=fr.value, vs=se.value; fr.length=1; se.length=1;   // se reconstruyen cuando llega un programa nuevo, conservando lo elegido
+  A.options('fr').forEach(v=>fr.add(new Option('Frente '+v,v))); A.options('sem').forEach(v=>se.add(new Option('Semana '+v,String(v)))); fr.value=vf; se.value=vs; }
+fillOpts();
+A.on('programa',fillOpts);
 [['sin_raja','Sin puntos de raja'],['sin_entrada','Sin ruta de entrada'],['sin_salida','Sin ruta de salida'],['raja_fuera','Rajas fuera del polígono'],
  ['no_llega_lote','Ruta termina a >1 km del lote'],['km','Distancia ≠ Dist KM Mapeado (>15 %)'],['av','Con autovolteo']].forEach(([v,t])=>$('fFlag').add(new Option(t,v)));
 const row=o=>`<div class="it" data-id="${o.id}" role="option"><span class="c">${o.id}</span><span class="n">${A.esc(o.nm)}</span><span class="tag ${o.src==='26-27'?'t27':o.src?'t26':'tno'}">${o.src||'—'}</span>

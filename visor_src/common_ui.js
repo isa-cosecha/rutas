@@ -56,6 +56,7 @@ UI = (() => {
     $('cfgWho').innerHTML = s ? `Usuario: <b>${A.esc(s.nombre)}</b> (${A.esc(s.user)}) · Rol: <b>${A.esc(s.rol)}</b>` : 'Sin sesión';
     $('cfgAdm').hidden = !A.auth.puede('capas_admin'); $('cfgUsr').hidden = !A.auth.puede('usuarios_admin');
     $('cfgData').value = A.cfg.data || ''; $('cfgGh').value = A.cfg.gh || ''; $('cfgUrl').value = A.cfg.url || '';
+    const pg = A.programa; $('cfgProg').textContent = pg.zafra ? `Programa de corte: ${pg.zafra}${pg.borrador ? ' · ' + pg.borrador : ''} · ${pg.total} plantíos · ${pg.origen === 'google' ? 'leído de Google Sheets' : 'última lectura guardada'}${pg.sinMapa.length ? ' · ' + pg.sinMapa.length + ' sin polígono en el mapa' : ''}${pg.fuera ? ' · ' + pg.fuera + ' del mapa ya no están en el programa' : ''}` : 'Programa de corte: el del repositorio (aún no se lee de Google Sheets).';
     const x = A.META; $('cfgVer').textContent = x.version ? `Datos versión ${x.version}, generados ${String(x.generado || '').slice(0, 16).replace('T', ' ')} UTC${x.origen ? ' · ' + x.origen : ''}${x.fuentes ? ' · Programa: ' + x.fuentes.programa : ''}${x.capas ? ' · Capas de apoyo ' + x.capas.version : ''}` : '';
     $('cfgQ').textContent = A.queueLen ? `${A.queueLen} respuesta(s) pendiente(s) de envío.` : 'Sin respuestas pendientes.';
     dlg.showModal();

@@ -72,6 +72,30 @@ App = (() => {
     o.dif = (o.dP && o.dkmm) ? Math.round((o.dP - o.dkmm) / o.dkmm * 1000) / 10 : null;
     o.tmkm = (o.tm && o.dP) ? Math.round(o.tm * o.dP) : null;
   });
+
+  // ---------- programa de corte leído de Google Sheets (hoja "Programa de Corte" de Archivo_Maestros) ----------
+  // Los datos del programa (frente, fecha, semana, secuencia, ha, toneladas…) se toman de la hoja; el repositorio sólo aporta la geometría y las rutas.
+  let PROG = {zafra: '', borrador: '', version: '', total: 0, enMapa: 0, sinMapa: [], fuera: 0, origen: 'repositorio', t: null};
+  const PROG_CAMPOS = ['nm', 'var', 'nc', 'ha', 'tm', 'est', 'fc', 'fr', 'sem', 'sec', 'reg', 'ten', 'mun', 'tc', 'car', 'ubi', 'mul', 'dkm', 'dkmm'];
+  const ordenPrograma = (a, b) => String(a.fr || '').localeCompare(String(b.fr || '')) || (a.sem || 0) - (b.sem || 0) || (a.sec || 0) - (b.sec || 0) || a.id.localeCompare(b.id);   // el mismo orden que ya tenía la lista
+  function aplicarPrograma(doc, origen) {
+    if (!doc || !Array.isArray(doc.rows) || !doc.rows.length) return false;
+    const filas = new Map(doc.rows.map(r => [r.id, r])); let n = 0;
+    D.forEach(o => {
+      const r = filas.get(o.id);
+      if (!r) { o.fuera = true; return; }
+      delete o.fuera; n++;
+      PROG_CAMPOS.forEach(k => { o[k] = (r[k] === undefined || r[k] === '') ? null : r[k]; });
+      o.tch = o.ha ? Math.round(o.tm / o.ha * 10) / 10 : null;
+      o.dif = (o.dP && o.dkmm) ? Math.round((o.dP - o.dkmm) / o.dkmm * 1000) / 10 : null;
+      o.tmkm = (o.tm && o.dP) ? Math.round(o.tm * o.dP) : null;
+    });
+    const ids = new Set(D.map(o => o.id));
+    D.sort(ordenPrograma);
+    PROG = {zafra: doc.zafra, borrador: doc.borrador || '', version: doc.version || '', total: doc.rows.length, enMapa: n, sinMapa: doc.rows.filter(r => !ids.has(r.id)).map(r => r.id), fuera: D.filter(o => o.fuera).length, origen: origen || 'google', t: Date.now()};
+    return true;
+  }
+  { const cp = LS.get('prog', null); if (cp) aplicarPrograma(cp, 'caché'); }   // sin conexión se usa el último programa leído
   const pip = (pt, ring) => { let ins = false; for (let i = 0, j = ring.length - 1; i < ring.length; j = i++) { const [yi, xi] = ring[i], [yj, xj] = ring[j];
     if (((yi > pt[0]) !== (yj > pt[0])) && (pt[1] < (xj - xi) * (pt[0] - yi) / (yj - yi) + xi)) ins = !ins; } return ins; };
   const inPlantio = (o, pt) => o._bb && pt[0] >= o._bb[0] && pt[0] <= o._bb[2] && pt[1] >= o._bb[1] && pt[1] <= o._bb[3]
@@ -409,6 +433,19 @@ App = (() => {
     } catch (e) { emit('toast', 'Sin conexión con Google Sheets: las respuestas quedan guardadas para reenvío'); }
     finally { flushing = false; emit('queue', queue.length); }
   }
+  let progOcupado = false;
+  /** Lee el programa vigente de Google Sheets (si ya se tiene esa versión, el servidor no reenvía las filas) y lo aplica. */
+  async function cargarPrograma() {
+    if (progOcupado || !cfg.url || !logged()) return; progOcupado = true;
+    try {
+      const j = await api('programa', {version: PROG.version || ''});
+      if (!j || !j.ok) return;
+      if (j.sinCambios) { PROG.t = Date.now(); return; }
+      if (!aplicarPrograma(j, 'google')) return;
+      LS.set('prog', {zafra: j.zafra, borrador: j.borrador, version: j.version, rows: j.rows});
+      applyFilters(); emit('programa', PROG); if (cur) emit('select', cur);
+    } catch (e) { /* sin conexión o servidor sin la hoja: se sigue con el último programa conocido */ } finally { progOcupado = false; }
+  }
   async function refreshStatus() {
     if (!cfg.url || !logged()) return;
     try {
@@ -416,7 +453,7 @@ App = (() => {
       if (j.ok) {
         remote = {}; Object.entries(j.status || {}).forEach(([k, v]) => remote[String(k).padStart(5, '0')] = v);
         if (j.rol && (sess.rol !== j.rol || sess.nombre !== j.nombre || JSON.stringify(sess.permisos) !== JSON.stringify(j.permisos))) { setSess({...sess, rol: j.rol, nombre: j.nombre, ficha: j.ficha || '', permisos: j.permisos}); emit('perfil', sess); }
-        applyPrefs(j.prefs); emit('status');
+        applyPrefs(j.prefs); emit('status'); cargarPrograma();
       }
     } catch {}
   }
@@ -461,6 +498,7 @@ App = (() => {
   // ---------- bloques de interfaz compartidos ----------
   function warnings(o) {
     const q = o.q, w = [];
+    if (o.fuera) w.push('Este plantío ya no está en el programa de corte vigente (Google Sheets).');
     if (!o.src) w.push('Plantío del programa sin carpeta en ningún mapeo.');
     if (o.src === '25-26') w.push('Aún no está en el Mapeo 26-27: se muestra la ruta de la zafra anterior.');
     if (o.flags.includes('sin_entrada')) w.push('No tiene ruta de entrada identificada.');
@@ -556,6 +594,7 @@ App = (() => {
 
   return {META: META || {}, D, byId, F, CAT, PCAT, FLAGS, vis, cfg, esc, fmt, init: initMap, select, step, fitLocal, fitAll, applyFilters, options, csv, flush, refreshStatus,
     saveCfg, locate, on, savePrefs, hasFilters, clearFilters, CAPS, capasCerca, setCapas, cercaCapa, _t: {fraccionSobre, distPlantio, capaBBox, reglaSobre}, valOf, valTag, srcTag, htmlKpis, htmlDetail, htmlPanelCapas, bindCapas, htmlForm, bind, kmFlag,
+    cargarPrograma, get programa() { return PROG; },
     auth: {logged, login, logout, changePassword, get sess() { return sess; }, puede, canSubmit: () => puede('responder')},
     api: (accion, datos) => api(accion, datos || {}, true),
     get filtered() { return filtered; }, get cur() { return cur; }, get queueLen() { return queue.length; }, get map() { return map; }};

@@ -60,3 +60,34 @@ input[type=range]{width:100%;height:34px;accent-color:var(--acc,var(--v))}
 #toast{position:fixed;left:50%;bottom:calc(86px + env(safe-area-inset-bottom,0px));transform:translateX(-50%);background:#17231b;color:#fff;padding:11px 16px;border-radius:12px;font-size:14.5px;z-index:80;max-width:92%;opacity:0;pointer-events:none;transition:opacity .2s;text-align:center}#toast.on{opacity:1}
 .sombra{height:6px}
 @media (prefers-reduced-motion:reduce){*{transition:none!important}}
+
+[hidden]{display:none!important}
+.sinos{display:block}
+/* ======================================================================================================
+   VERSIÓN WEB (computadora): menú lateral, formularios en 2-3 columnas, ATS en dos columnas, listas en ventana centrada.
+   Se activa con data-modo="web", que es la misma elección web/móvil que hace el mapa. El celular no cambia.
+   ====================================================================================================== */
+:host([data-modo=web]) #app{max-width:none;margin:0;display:grid;grid-template-columns:240px minmax(0,1fr);grid-template-rows:auto minmax(0,1fr);height:100%}
+:host([data-modo=web]) #top{grid-column:1/3;grid-row:1;padding:12px 24px}
+:host([data-modo=web]) #top h1{font-size:19px}
+:host([data-modo=web]) #tabs{grid-column:1;grid-row:2;flex-direction:column;align-items:stretch;gap:4px;padding:16px 12px;border-top:0;border-right:1px solid var(--line);position:static;overflow-y:auto}
+:host([data-modo=web]) #tabs button{flex:none;flex-direction:row;justify-content:flex-start;align-items:center;gap:12px;font-size:15px;padding:12px 14px;border-radius:10px;text-align:left;color:var(--ink)}
+:host([data-modo=web]) #tabs button:hover{background:#eef3ef}
+:host([data-modo=web]) #tabs button.on{box-shadow:none;background:#e3eee6;color:var(--v);font-weight:700}
+:host([data-modo=web]) #tabs button b{font-size:22px;width:28px;text-align:center}
+:host([data-modo=web]) #tabs .n{position:static;margin-left:auto}
+:host([data-modo=web]) #vista{grid-column:2;grid-row:2;padding:24px 32px 48px}
+:host([data-modo=web]) .card{max-width:1180px;margin:0 auto 20px}
+:host([data-modo=web]) .card>h2{padding:14px 24px;font-size:18px}
+:host([data-modo=web]) .cuerpo{padding:20px 24px 24px}
+:host([data-modo=web]) .cuerpo>form{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));column-gap:22px;align-items:start}
+:host([data-modo=web]) .fila,:host([data-modo=web]) .fila3,:host([data-modo=web]) #cbPlanta,:host([data-modo=web]) #cbMoto,:host([data-modo=web]) #cbOdo{display:contents}
+:host([data-modo=web]) .campo.full,:host([data-modo=web]) .grupo,:host([data-modo=web]) .aviso,:host([data-modo=web]) .sinos,:host([data-modo=web]) #atsBio{grid-column:1/-1}
+:host([data-modo=web]) .btn[type=submit]{grid-column:1/-1;justify-self:end;width:auto;min-width:280px;padding:0 28px}
+:host([data-modo=web]) .sinos{display:grid;grid-template-columns:1fr 1fr;column-gap:40px}
+:host([data-modo=web]) #vista .item .acc .btn{min-height:38px}
+:host([data-modo=web]) #sheet.on{align-items:center}
+:host([data-modo=web]) #sheet .hoja{max-width:620px;max-height:78%;border-radius:16px}
+:host([data-modo=web]) #toast{bottom:28px}
+@media (max-width:1180px){:host([data-modo=web]) .cuerpo>form{grid-template-columns:repeat(2,minmax(0,1fr))}}
+@media (max-width:980px){:host([data-modo=web]) #app{grid-template-columns:200px minmax(0,1fr)}:host([data-modo=web]) .sinos{grid-template-columns:1fr}}

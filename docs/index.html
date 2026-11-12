@@ -858,6 +858,7 @@ details.mods[open] summary{border-color:var(--amber)}
   <div id="cfgWho" class="who"></div>
   <div class="row" style="justify-content:flex-start;margin:8px 0"><button id="cfgPw" type="button">Cambiar clave</button><button id="cfgOut" type="button">Cerrar sesión</button></div>
   <div id="cfgVer" style="font-size:12.5px;color:var(--mute);margin:8px 0"></div>
+  <div id="cfgProg" style="font-size:12.5px;color:var(--mute);margin:4px 0"></div>
   <div id="cfgQ" style="font-size:12.5px;color:var(--mute)"></div>
   <details><summary>Avanzado (conexiones)</summary>
     <label>URL del Web App de Google Apps Script<input id="cfgUrl" type="url" placeholder="https://script.google.com/macros/s/…/exec"></label>
@@ -1011,6 +1012,30 @@ App = (() => {
     o.dif = (o.dP && o.dkmm) ? Math.round((o.dP - o.dkmm) / o.dkmm * 1000) / 10 : null;
     o.tmkm = (o.tm && o.dP) ? Math.round(o.tm * o.dP) : null;
   });
+
+  // ---------- programa de corte leído de Google Sheets (hoja "Programa de Corte" de Archivo_Maestros) ----------
+  // Los datos del programa (frente, fecha, semana, secuencia, ha, toneladas…) se toman de la hoja; el repositorio sólo aporta la geometría y las rutas.
+  let PROG = {zafra: '', borrador: '', version: '', total: 0, enMapa: 0, sinMapa: [], fuera: 0, origen: 'repositorio', t: null};
+  const PROG_CAMPOS = ['nm', 'var', 'nc', 'ha', 'tm', 'est', 'fc', 'fr', 'sem', 'sec', 'reg', 'ten', 'mun', 'tc', 'car', 'ubi', 'mul', 'dkm', 'dkmm'];
+  const ordenPrograma = (a, b) => String(a.fr || '').localeCompare(String(b.fr || '')) || (a.sem || 0) - (b.sem || 0) || (a.sec || 0) - (b.sec || 0) || a.id.localeCompare(b.id);   // el mismo orden que ya tenía la lista
+  function aplicarPrograma(doc, origen) {
+    if (!doc || !Array.isArray(doc.rows) || !doc.rows.length) return false;
+    const filas = new Map(doc.rows.map(r => [r.id, r])); let n = 0;
+    D.forEach(o => {
+      const r = filas.get(o.id);
+      if (!r) { o.fuera = true; return; }
+      delete o.fuera; n++;
+      PROG_CAMPOS.forEach(k => { o[k] = (r[k] === undefined || r[k] === '') ? null : r[k]; });
+      o.tch = o.ha ? Math.round(o.tm / o.ha * 10) / 10 : null;
+      o.dif = (o.dP && o.dkmm) ? Math.round((o.dP - o.dkmm) / o.dkmm * 1000) / 10 : null;
+      o.tmkm = (o.tm && o.dP) ? Math.round(o.tm * o.dP) : null;
+    });
+    const ids = new Set(D.map(o => o.id));
+    D.sort(ordenPrograma);
+    PROG = {zafra: doc.zafra, borrador: doc.borrador || '', version: doc.version || '', total: doc.rows.length, enMapa: n, sinMapa: doc.rows.filter(r => !ids.has(r.id)).map(r => r.id), fuera: D.filter(o => o.fuera).length, origen: origen || 'google', t: Date.now()};
+    return true;
+  }
+  { const cp = LS.get('prog', null); if (cp) aplicarPrograma(cp, 'caché'); }   // sin conexión se usa el último programa leído
   const pip = (pt, ring) => { let ins = false; for (let i = 0, j = ring.length - 1; i < ring.length; j = i++) { const [yi, xi] = ring[i], [yj, xj] = ring[j];
     if (((yi > pt[0]) !== (yj > pt[0])) && (pt[1] < (xj - xi) * (pt[0] - yi) / (yj - yi) + xi)) ins = !ins; } return ins; };
   const inPlantio = (o, pt) => o._bb && pt[0] >= o._bb[0] && pt[0] <= o._bb[2] && pt[1] >= o._bb[1] && pt[1] <= o._bb[3]
@@ -1348,6 +1373,19 @@ App = (() => {
     } catch (e) { emit('toast', 'Sin conexión con Google Sheets: las respuestas quedan guardadas para reenvío'); }
     finally { flushing = false; emit('queue', queue.length); }
   }
+  let progOcupado = false;
+  /** Lee el programa vigente de Google Sheets (si ya se tiene esa versión, el servidor no reenvía las filas) y lo aplica. */
+  async function cargarPrograma() {
+    if (progOcupado || !cfg.url || !logged()) return; progOcupado = true;
+    try {
+      const j = await api('programa', {version: PROG.version || ''});
+      if (!j || !j.ok) return;
+      if (j.sinCambios) { PROG.t = Date.now(); return; }
+      if (!aplicarPrograma(j, 'google')) return;
+      LS.set('prog', {zafra: j.zafra, borrador: j.borrador, version: j.version, rows: j.rows});
+      applyFilters(); emit('programa', PROG); if (cur) emit('select', cur);
+    } catch (e) { /* sin conexión o servidor sin la hoja: se sigue con el último programa conocido */ } finally { progOcupado = false; }
+  }
   async function refreshStatus() {
     if (!cfg.url || !logged()) return;
     try {
@@ -1355,7 +1393,7 @@ App = (() => {
       if (j.ok) {
         remote = {}; Object.entries(j.status || {}).forEach(([k, v]) => remote[String(k).padStart(5, '0')] = v);
         if (j.rol && (sess.rol !== j.rol || sess.nombre !== j.nombre || JSON.stringify(sess.permisos) !== JSON.stringify(j.permisos))) { setSess({...sess, rol: j.rol, nombre: j.nombre, ficha: j.ficha || '', permisos: j.permisos}); emit('perfil', sess); }
-        applyPrefs(j.prefs); emit('status');
+        applyPrefs(j.prefs); emit('status'); cargarPrograma();
       }
     } catch {}
   }
@@ -1400,6 +1438,7 @@ App = (() => {
   // ---------- bloques de interfaz compartidos ----------
   function warnings(o) {
     const q = o.q, w = [];
+    if (o.fuera) w.push('Este plantío ya no está en el programa de corte vigente (Google Sheets).');
     if (!o.src) w.push('Plantío del programa sin carpeta en ningún mapeo.');
     if (o.src === '25-26') w.push('Aún no está en el Mapeo 26-27: se muestra la ruta de la zafra anterior.');
     if (o.flags.includes('sin_entrada')) w.push('No tiene ruta de entrada identificada.');
@@ -1495,6 +1534,7 @@ App = (() => {
 
   return {META: META || {}, D, byId, F, CAT, PCAT, FLAGS, vis, cfg, esc, fmt, init: initMap, select, step, fitLocal, fitAll, applyFilters, options, csv, flush, refreshStatus,
     saveCfg, locate, on, savePrefs, hasFilters, clearFilters, CAPS, capasCerca, setCapas, cercaCapa, _t: {fraccionSobre, distPlantio, capaBBox, reglaSobre}, valOf, valTag, srcTag, htmlKpis, htmlDetail, htmlPanelCapas, bindCapas, htmlForm, bind, kmFlag,
+    cargarPrograma, get programa() { return PROG; },
     auth: {logged, login, logout, changePassword, get sess() { return sess; }, puede, canSubmit: () => puede('responder')},
     api: (accion, datos) => api(accion, datos || {}, true),
     get filtered() { return filtered; }, get cur() { return cur; }, get queueLen() { return queue.length; }, get map() { return map; }};
@@ -1560,6 +1600,7 @@ UI = (() => {
     $('cfgWho').innerHTML = s ? `Usuario: <b>${A.esc(s.nombre)}</b> (${A.esc(s.user)}) · Rol: <b>${A.esc(s.rol)}</b>` : 'Sin sesión';
     $('cfgAdm').hidden = !A.auth.puede('capas_admin'); $('cfgUsr').hidden = !A.auth.puede('usuarios_admin');
     $('cfgData').value = A.cfg.data || ''; $('cfgGh').value = A.cfg.gh || ''; $('cfgUrl').value = A.cfg.url || '';
+    const pg = A.programa; $('cfgProg').textContent = pg.zafra ? `Programa de corte: ${pg.zafra}${pg.borrador ? ' · ' + pg.borrador : ''} · ${pg.total} plantíos · ${pg.origen === 'google' ? 'leído de Google Sheets' : 'última lectura guardada'}${pg.sinMapa.length ? ' · ' + pg.sinMapa.length + ' sin polígono en el mapa' : ''}${pg.fuera ? ' · ' + pg.fuera + ' del mapa ya no están en el programa' : ''}` : 'Programa de corte: el del repositorio (aún no se lee de Google Sheets).';
     const x = A.META; $('cfgVer').textContent = x.version ? `Datos versión ${x.version}, generados ${String(x.generado || '').slice(0, 16).replace('T', ' ')} UTC${x.origen ? ' · ' + x.origen : ''}${x.fuentes ? ' · Programa: ' + x.fuentes.programa : ''}${x.capas ? ' · Capas de apoyo ' + x.capas.version : ''}` : '';
     $('cfgQ').textContent = A.queueLen ? `${A.queueLen} respuesta(s) pendiente(s) de envío.` : 'Sin respuestas pendientes.';
     dlg.showModal();
@@ -2115,7 +2156,7 @@ function initAdminUsuarios() {
   });
 }
 </script>
-<script>const FF_CSS = ":host{all:initial;position:fixed;inset:0;z-index:2500;display:none;background:#f2f4f1;--v:#1d4d2e;--v2:#2c6b42;--bg:#f2f4f1;--card:#fff;--ink:#17231b;--mute:#5d6b61;--line:#d5dcd6;--ok:#1f8a4c;--warn:#c27c0e;--bad:#c0392b;--azul:#2563a8;--ama:#b7791f;--cian:#0e7490;--verde:#2c6b42;--r:12px}\n:host(.on){display:block}\n*{box-sizing:border-box}\n#app{font:16px/1.4 system-ui,-apple-system,\"Segoe UI\",Roboto,Arial,sans-serif;color:var(--ink);-webkit-text-size-adjust:100%}\nbutton,input,select,textarea{font:inherit;color:inherit}\n#app{display:flex;flex-direction:column;height:100%;max-width:760px;margin:0 auto;background:var(--bg)}\n#top{background:var(--v);color:#fff;padding:calc(8px + env(safe-area-inset-top,0px)) 14px 8px;display:flex;align-items:center;gap:10px}\n#top .atras{padding:6px 11px}#top h1{font-size:16.5px;margin:0;flex:1;line-height:1.15;min-width:0}#top h1 small{display:block;font-weight:400;opacity:.8;font-size:12px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}\n.chip{background:rgba(255,255,255,.16);border:0;color:#fff;border-radius:99px;padding:6px 12px;font-size:13px;cursor:pointer;white-space:nowrap}\n#estado{font-size:12px;display:flex;align-items:center;gap:6px;white-space:nowrap}#estado i{width:9px;height:9px;border-radius:50%;background:#7bd88f;display:inline-block}\n#estado.off i{background:#f0a15b}\n#vista{flex:1;overflow-y:auto;padding:12px 12px 90px;-webkit-overflow-scrolling:touch}\n#tabs{display:flex;background:#fff;border-top:1px solid var(--line);padding-bottom:env(safe-area-inset-bottom,0px);position:sticky;bottom:0}\n#tabs button{flex:1;border:0;background:none;padding:8px 2px 7px;font-size:11.5px;color:var(--mute);display:flex;flex-direction:column;align-items:center;gap:2px;position:relative;cursor:pointer}\n#tabs button b{font-size:21px;line-height:1}#tabs button.on{color:var(--v);font-weight:700;box-shadow:inset 0 3px 0 var(--v)}\n#tabs .n{position:absolute;top:3px;right:calc(50% - 22px);background:var(--bad);color:#fff;border-radius:99px;font-size:10.5px;min-width:17px;padding:1px 4px;font-weight:700}\n.card{background:var(--card);border-radius:var(--r);box-shadow:0 1px 3px rgba(0,0,0,.08);margin-bottom:12px;overflow:hidden}\n.card>h2{margin:0;padding:11px 14px;font-size:16px;color:#fff;background:var(--acc,var(--v))}\n.cuerpo{padding:12px 14px 14px}\n.campo{margin-bottom:13px}.campo>label,.campo>.lbl{display:block;font-size:13px;font-weight:600;color:var(--mute);margin-bottom:5px}\n.campo .ayuda{font-size:12.5px;color:var(--mute);margin-top:4px}.campo .ayuda b{color:var(--ink)}\n.fila{display:grid;grid-template-columns:1fr 1fr;gap:10px}.fila3{display:grid;grid-template-columns:1fr 1fr 1fr;gap:10px}\n@media(max-width:380px){.fila3{grid-template-columns:1fr 1fr}}\ninput[type=text],input[type=number],input[type=date],input[type=password],select,textarea,.sel{width:100%;min-height:48px;padding:10px 12px;border:1.5px solid var(--line);border-radius:10px;background:#fff;font-size:16px}\ntextarea{min-height:76px;resize:vertical}\ninput:focus,select:focus,textarea:focus,.sel:focus{outline:2.5px solid var(--acc,var(--v2));outline-offset:0;border-color:transparent}\n.sel{text-align:left;cursor:pointer;display:flex;justify-content:space-between;align-items:center;gap:8px}.sel .v{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}.sel .v.ph{color:#8b978f}.sel:after{content:\"\u25be\";color:var(--mute)}\n.inval{border-color:var(--bad)!important;background:#fff5f4}\n.seg{display:flex;border:1.5px solid var(--line);border-radius:10px;overflow:hidden;background:#fff}\n.seg button{flex:1;border:0;background:#fff;min-height:48px;font-size:15px;cursor:pointer;border-right:1px solid var(--line)}.seg button:last-child{border-right:0}\n.seg button.on{background:var(--acc,var(--v));color:#fff;font-weight:700}\n.btn{display:block;width:100%;min-height:52px;border:0;border-radius:11px;background:var(--acc,var(--v));color:#fff;font-weight:700;font-size:17px;cursor:pointer}\n.btn:disabled{opacity:.5}.btn.sec{background:#fff;color:var(--ink);border:1.5px solid var(--line);font-weight:600}.btn.peq{min-height:40px;font-size:14px;width:auto;padding:0 14px;display:inline-block}\n.btn.mal{background:var(--bad)}\n.aviso{background:#fff7e6;border-left:4px solid var(--warn);padding:9px 11px;border-radius:8px;font-size:14px;margin-bottom:12px}\n.aviso.mal{background:#fdecea;border-color:var(--bad)}.aviso.ok{background:#e8f6ee;border-color:var(--ok)}\n.sino{display:flex;align-items:center;justify-content:space-between;gap:10px;padding:9px 0;border-bottom:1px solid #eef1ee}.sino:last-child{border-bottom:0}\n.sino .q{flex:1;font-size:15px}.sino .b{display:flex;gap:6px}\n.sino button{min-width:58px;min-height:44px;border:1.5px solid var(--line);background:#fff;border-radius:9px;font-weight:700;font-size:15px;cursor:pointer}\n.sino button.on.si{background:var(--ok);border-color:var(--ok);color:#fff}.sino button.on.no{background:var(--bad);border-color:var(--bad);color:#fff}\n.sino.haz button.on.si{background:var(--warn);border-color:var(--warn)}.sino.haz button.on.no{background:#6b7a70;border-color:#6b7a70}\n.sino.falta{background:#fff5f4;margin:0 -8px;padding:9px 8px;border-radius:8px}\n.grupo{font-size:14px;font-weight:700;color:var(--v);margin:16px 0 4px;display:flex;align-items:center;justify-content:space-between;gap:8px}\n.grupo small{font-weight:600;color:var(--mute)}.grupo .btn{font-size:12.5px;min-height:34px;padding:0 10px}\n.chips{display:flex;flex-wrap:wrap;gap:8px}.chips button{min-height:46px;padding:0 16px;border:1.5px solid var(--line);background:#fff;border-radius:99px;font-size:15px;cursor:pointer}.chips button.on{background:var(--acc,var(--v));border-color:transparent;color:#fff;font-weight:700}\ninput[type=range]{width:100%;height:34px;accent-color:var(--acc,var(--v))}\n.rango{display:flex;align-items:center;gap:12px}.rango output{min-width:62px;text-align:center;font-weight:700;font-size:18px;background:#e8f0fe;border-radius:8px;padding:6px}.rango output.vacio{color:#8b978f;background:#f0f2f0}\n.ro{background:#f0f4f1;font-weight:700;color:var(--acc,var(--v))}\n.item{border-bottom:1px solid #eef1ee;padding:11px 0}.item:last-child{border-bottom:0}.item .t{font-weight:600}.item .s{font-size:13px;color:var(--mute)}\n.item .e{font-size:13.5px;margin-top:4px}.item .acc{display:flex;gap:8px;flex-wrap:wrap;margin-top:8px}\n.tag{display:inline-block;font-size:11.5px;font-weight:700;border-radius:5px;padding:1px 7px;color:#fff;background:#6b7a70}.tag.p{background:var(--warn)}.tag.e{background:var(--bad)}.tag.o{background:var(--ok)}.tag.r{background:#8a4fb3}\n.vacio-msg{color:var(--mute);text-align:center;padding:26px 8px}\n#sheet{position:fixed;inset:0;z-index:60;background:rgba(0,0,0,.45);display:none}#sheet.on{display:flex;align-items:flex-end;justify-content:center}\n#sheet .hoja{background:#fff;width:100%;max-width:760px;max-height:88%;border-radius:18px 18px 0 0;display:flex;flex-direction:column;padding-bottom:env(safe-area-inset-bottom,0px)}\n#sheet .cab{padding:12px 14px 8px;display:flex;gap:8px;align-items:center}#sheet .cab b{flex:1;font-size:16px}\n#sheet .lista{overflow-y:auto;padding:0 6px 8px}\n#sheet .op{display:block;width:100%;text-align:left;border:0;background:none;padding:12px 10px;border-bottom:1px solid #f0f2f0;min-height:50px;font-size:16px;cursor:pointer}#sheet .op small{display:block;color:var(--mute);font-size:12.5px}#sheet .op:active{background:#eef4ef}\n#modal{position:fixed;inset:0;z-index:70;background:rgba(0,0,0,.5);display:none;align-items:center;justify-content:center;padding:18px}#modal.on{display:flex}\n#modal .caja{background:#fff;border-radius:16px;max-width:400px;width:100%;padding:18px}#modal h3{margin:0 0 8px;font-size:18px}#modal ul{margin:0 0 14px;padding-left:20px}#modal li{margin-bottom:5px}#modal .bs{display:flex;gap:10px}#modal .bs .btn{min-height:48px;font-size:15.5px}\n#toast{position:fixed;left:50%;bottom:calc(86px + env(safe-area-inset-bottom,0px));transform:translateX(-50%);background:#17231b;color:#fff;padding:11px 16px;border-radius:12px;font-size:14.5px;z-index:80;max-width:92%;opacity:0;pointer-events:none;transition:opacity .2s;text-align:center}#toast.on{opacity:1}\n.sombra{height:6px}\n@media (prefers-reduced-motion:reduce){*{transition:none!important}}\n";</script>
+<script>const FF_CSS = ":host{all:initial;position:fixed;inset:0;z-index:2500;display:none;background:#f2f4f1;--v:#1d4d2e;--v2:#2c6b42;--bg:#f2f4f1;--card:#fff;--ink:#17231b;--mute:#5d6b61;--line:#d5dcd6;--ok:#1f8a4c;--warn:#c27c0e;--bad:#c0392b;--azul:#2563a8;--ama:#b7791f;--cian:#0e7490;--verde:#2c6b42;--r:12px}\n:host(.on){display:block}\n*{box-sizing:border-box}\n#app{font:16px/1.4 system-ui,-apple-system,\"Segoe UI\",Roboto,Arial,sans-serif;color:var(--ink);-webkit-text-size-adjust:100%}\nbutton,input,select,textarea{font:inherit;color:inherit}\n#app{display:flex;flex-direction:column;height:100%;max-width:760px;margin:0 auto;background:var(--bg)}\n#top{background:var(--v);color:#fff;padding:calc(8px + env(safe-area-inset-top,0px)) 14px 8px;display:flex;align-items:center;gap:10px}\n#top .atras{padding:6px 11px}#top h1{font-size:16.5px;margin:0;flex:1;line-height:1.15;min-width:0}#top h1 small{display:block;font-weight:400;opacity:.8;font-size:12px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}\n.chip{background:rgba(255,255,255,.16);border:0;color:#fff;border-radius:99px;padding:6px 12px;font-size:13px;cursor:pointer;white-space:nowrap}\n#estado{font-size:12px;display:flex;align-items:center;gap:6px;white-space:nowrap}#estado i{width:9px;height:9px;border-radius:50%;background:#7bd88f;display:inline-block}\n#estado.off i{background:#f0a15b}\n#vista{flex:1;overflow-y:auto;padding:12px 12px 90px;-webkit-overflow-scrolling:touch}\n#tabs{display:flex;background:#fff;border-top:1px solid var(--line);padding-bottom:env(safe-area-inset-bottom,0px);position:sticky;bottom:0}\n#tabs button{flex:1;border:0;background:none;padding:8px 2px 7px;font-size:11.5px;color:var(--mute);display:flex;flex-direction:column;align-items:center;gap:2px;position:relative;cursor:pointer}\n#tabs button b{font-size:21px;line-height:1}#tabs button.on{color:var(--v);font-weight:700;box-shadow:inset 0 3px 0 var(--v)}\n#tabs .n{position:absolute;top:3px;right:calc(50% - 22px);background:var(--bad);color:#fff;border-radius:99px;font-size:10.5px;min-width:17px;padding:1px 4px;font-weight:700}\n.card{background:var(--card);border-radius:var(--r);box-shadow:0 1px 3px rgba(0,0,0,.08);margin-bottom:12px;overflow:hidden}\n.card>h2{margin:0;padding:11px 14px;font-size:16px;color:#fff;background:var(--acc,var(--v))}\n.cuerpo{padding:12px 14px 14px}\n.campo{margin-bottom:13px}.campo>label,.campo>.lbl{display:block;font-size:13px;font-weight:600;color:var(--mute);margin-bottom:5px}\n.campo .ayuda{font-size:12.5px;color:var(--mute);margin-top:4px}.campo .ayuda b{color:var(--ink)}\n.fila{display:grid;grid-template-columns:1fr 1fr;gap:10px}.fila3{display:grid;grid-template-columns:1fr 1fr 1fr;gap:10px}\n@media(max-width:380px){.fila3{grid-template-columns:1fr 1fr}}\ninput[type=text],input[type=number],input[type=date],input[type=password],select,textarea,.sel{width:100%;min-height:48px;padding:10px 12px;border:1.5px solid var(--line);border-radius:10px;background:#fff;font-size:16px}\ntextarea{min-height:76px;resize:vertical}\ninput:focus,select:focus,textarea:focus,.sel:focus{outline:2.5px solid var(--acc,var(--v2));outline-offset:0;border-color:transparent}\n.sel{text-align:left;cursor:pointer;display:flex;justify-content:space-between;align-items:center;gap:8px}.sel .v{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}.sel .v.ph{color:#8b978f}.sel:after{content:\"\u25be\";color:var(--mute)}\n.inval{border-color:var(--bad)!important;background:#fff5f4}\n.seg{display:flex;border:1.5px solid var(--line);border-radius:10px;overflow:hidden;background:#fff}\n.seg button{flex:1;border:0;background:#fff;min-height:48px;font-size:15px;cursor:pointer;border-right:1px solid var(--line)}.seg button:last-child{border-right:0}\n.seg button.on{background:var(--acc,var(--v));color:#fff;font-weight:700}\n.btn{display:block;width:100%;min-height:52px;border:0;border-radius:11px;background:var(--acc,var(--v));color:#fff;font-weight:700;font-size:17px;cursor:pointer}\n.btn:disabled{opacity:.5}.btn.sec{background:#fff;color:var(--ink);border:1.5px solid var(--line);font-weight:600}.btn.peq{min-height:40px;font-size:14px;width:auto;padding:0 14px;display:inline-block}\n.btn.mal{background:var(--bad)}\n.aviso{background:#fff7e6;border-left:4px solid var(--warn);padding:9px 11px;border-radius:8px;font-size:14px;margin-bottom:12px}\n.aviso.mal{background:#fdecea;border-color:var(--bad)}.aviso.ok{background:#e8f6ee;border-color:var(--ok)}\n.sino{display:flex;align-items:center;justify-content:space-between;gap:10px;padding:9px 0;border-bottom:1px solid #eef1ee}.sino:last-child{border-bottom:0}\n.sino .q{flex:1;font-size:15px}.sino .b{display:flex;gap:6px}\n.sino button{min-width:58px;min-height:44px;border:1.5px solid var(--line);background:#fff;border-radius:9px;font-weight:700;font-size:15px;cursor:pointer}\n.sino button.on.si{background:var(--ok);border-color:var(--ok);color:#fff}.sino button.on.no{background:var(--bad);border-color:var(--bad);color:#fff}\n.sino.haz button.on.si{background:var(--warn);border-color:var(--warn)}.sino.haz button.on.no{background:#6b7a70;border-color:#6b7a70}\n.sino.falta{background:#fff5f4;margin:0 -8px;padding:9px 8px;border-radius:8px}\n.grupo{font-size:14px;font-weight:700;color:var(--v);margin:16px 0 4px;display:flex;align-items:center;justify-content:space-between;gap:8px}\n.grupo small{font-weight:600;color:var(--mute)}.grupo .btn{font-size:12.5px;min-height:34px;padding:0 10px}\n.chips{display:flex;flex-wrap:wrap;gap:8px}.chips button{min-height:46px;padding:0 16px;border:1.5px solid var(--line);background:#fff;border-radius:99px;font-size:15px;cursor:pointer}.chips button.on{background:var(--acc,var(--v));border-color:transparent;color:#fff;font-weight:700}\ninput[type=range]{width:100%;height:34px;accent-color:var(--acc,var(--v))}\n.rango{display:flex;align-items:center;gap:12px}.rango output{min-width:62px;text-align:center;font-weight:700;font-size:18px;background:#e8f0fe;border-radius:8px;padding:6px}.rango output.vacio{color:#8b978f;background:#f0f2f0}\n.ro{background:#f0f4f1;font-weight:700;color:var(--acc,var(--v))}\n.item{border-bottom:1px solid #eef1ee;padding:11px 0}.item:last-child{border-bottom:0}.item .t{font-weight:600}.item .s{font-size:13px;color:var(--mute)}\n.item .e{font-size:13.5px;margin-top:4px}.item .acc{display:flex;gap:8px;flex-wrap:wrap;margin-top:8px}\n.tag{display:inline-block;font-size:11.5px;font-weight:700;border-radius:5px;padding:1px 7px;color:#fff;background:#6b7a70}.tag.p{background:var(--warn)}.tag.e{background:var(--bad)}.tag.o{background:var(--ok)}.tag.r{background:#8a4fb3}\n.vacio-msg{color:var(--mute);text-align:center;padding:26px 8px}\n#sheet{position:fixed;inset:0;z-index:60;background:rgba(0,0,0,.45);display:none}#sheet.on{display:flex;align-items:flex-end;justify-content:center}\n#sheet .hoja{background:#fff;width:100%;max-width:760px;max-height:88%;border-radius:18px 18px 0 0;display:flex;flex-direction:column;padding-bottom:env(safe-area-inset-bottom,0px)}\n#sheet .cab{padding:12px 14px 8px;display:flex;gap:8px;align-items:center}#sheet .cab b{flex:1;font-size:16px}\n#sheet .lista{overflow-y:auto;padding:0 6px 8px}\n#sheet .op{display:block;width:100%;text-align:left;border:0;background:none;padding:12px 10px;border-bottom:1px solid #f0f2f0;min-height:50px;font-size:16px;cursor:pointer}#sheet .op small{display:block;color:var(--mute);font-size:12.5px}#sheet .op:active{background:#eef4ef}\n#modal{position:fixed;inset:0;z-index:70;background:rgba(0,0,0,.5);display:none;align-items:center;justify-content:center;padding:18px}#modal.on{display:flex}\n#modal .caja{background:#fff;border-radius:16px;max-width:400px;width:100%;padding:18px}#modal h3{margin:0 0 8px;font-size:18px}#modal ul{margin:0 0 14px;padding-left:20px}#modal li{margin-bottom:5px}#modal .bs{display:flex;gap:10px}#modal .bs .btn{min-height:48px;font-size:15.5px}\n#toast{position:fixed;left:50%;bottom:calc(86px + env(safe-area-inset-bottom,0px));transform:translateX(-50%);background:#17231b;color:#fff;padding:11px 16px;border-radius:12px;font-size:14.5px;z-index:80;max-width:92%;opacity:0;pointer-events:none;transition:opacity .2s;text-align:center}#toast.on{opacity:1}\n.sombra{height:6px}\n@media (prefers-reduced-motion:reduce){*{transition:none!important}}\n\n[hidden]{display:none!important}\n.sinos{display:block}\n/* ======================================================================================================\n   VERSI\u00d3N WEB (computadora): men\u00fa lateral, formularios en 2-3 columnas, ATS en dos columnas, listas en ventana centrada.\n   Se activa con data-modo=\"web\", que es la misma elecci\u00f3n web/m\u00f3vil que hace el mapa. El celular no cambia.\n   ====================================================================================================== */\n:host([data-modo=web]) #app{max-width:none;margin:0;display:grid;grid-template-columns:240px minmax(0,1fr);grid-template-rows:auto minmax(0,1fr);height:100%}\n:host([data-modo=web]) #top{grid-column:1/3;grid-row:1;padding:12px 24px}\n:host([data-modo=web]) #top h1{font-size:19px}\n:host([data-modo=web]) #tabs{grid-column:1;grid-row:2;flex-direction:column;align-items:stretch;gap:4px;padding:16px 12px;border-top:0;border-right:1px solid var(--line);position:static;overflow-y:auto}\n:host([data-modo=web]) #tabs button{flex:none;flex-direction:row;justify-content:flex-start;align-items:center;gap:12px;font-size:15px;padding:12px 14px;border-radius:10px;text-align:left;color:var(--ink)}\n:host([data-modo=web]) #tabs button:hover{background:#eef3ef}\n:host([data-modo=web]) #tabs button.on{box-shadow:none;background:#e3eee6;color:var(--v);font-weight:700}\n:host([data-modo=web]) #tabs button b{font-size:22px;width:28px;text-align:center}\n:host([data-modo=web]) #tabs .n{position:static;margin-left:auto}\n:host([data-modo=web]) #vista{grid-column:2;grid-row:2;padding:24px 32px 48px}\n:host([data-modo=web]) .card{max-width:1180px;margin:0 auto 20px}\n:host([data-modo=web]) .card>h2{padding:14px 24px;font-size:18px}\n:host([data-modo=web]) .cuerpo{padding:20px 24px 24px}\n:host([data-modo=web]) .cuerpo>form{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));column-gap:22px;align-items:start}\n:host([data-modo=web]) .fila,:host([data-modo=web]) .fila3,:host([data-modo=web]) #cbPlanta,:host([data-modo=web]) #cbMoto,:host([data-modo=web]) #cbOdo{display:contents}\n:host([data-modo=web]) .campo.full,:host([data-modo=web]) .grupo,:host([data-modo=web]) .aviso,:host([data-modo=web]) .sinos,:host([data-modo=web]) #atsBio{grid-column:1/-1}\n:host([data-modo=web]) .btn[type=submit]{grid-column:1/-1;justify-self:end;width:auto;min-width:280px;padding:0 28px}\n:host([data-modo=web]) .sinos{display:grid;grid-template-columns:1fr 1fr;column-gap:40px}\n:host([data-modo=web]) #vista .item .acc .btn{min-height:38px}\n:host([data-modo=web]) #sheet.on{align-items:center}\n:host([data-modo=web]) #sheet .hoja{max-width:620px;max-height:78%;border-radius:16px}\n:host([data-modo=web]) #toast{bottom:28px}\n@media (max-width:1180px){:host([data-modo=web]) .cuerpo>form{grid-template-columns:repeat(2,minmax(0,1fr))}}\n@media (max-width:980px){:host([data-modo=web]) #app{grid-template-columns:200px minmax(0,1fr)}:host([data-modo=web]) .sinos{grid-template-columns:1fr}}\n";</script>
 <script>/* Formularios de campo (combustible, recorrido de motos, seguimiento de administradores, ATS) como módulo de la plataforma.
  * Comparte con el mapa el inicio de sesión, el servidor y los permisos (App.auth / App.api). Se dibuja dentro de un Shadow DOM,
  * así que sus estilos e identificadores no se mezclan con los del mapa. Sin conexión funciona con catálogos y cola guardados
@@ -2230,11 +2271,11 @@ function confirmar(titulo, lineas, si = 'Confirmar y guardar', no = 'Revisar') {
 /** Selector a pantalla completa con buscador. opciones: [{valor, texto, sub}]. libre(texto) → {valor, texto} | null para aceptar lo escrito. */
 function elegir(titulo, opciones, libre) {
   return new Promise(res => {
-    const sh = $('#sheet'), q = $('#shQ'), L = $('#shL'), lb = $('#shLibre');
+    const sh = $('#sheet'), q = $('#shQ'), L = $('#shL'), lb = $('#shLibre'), todas = typeof opciones === 'function' ? opciones : () => opciones;   // opciones: lista, o función de lo que se escribe en el buscador
     $('#shT').textContent = titulo; q.value = ''; sh.classList.add('on');
     const cerrar = v => { sh.classList.remove('on'); res(v); };
     const pintar = () => {
-      const t = q.value.trim().toLowerCase(), v = opciones.filter(o => !t || (o.texto + ' ' + (o.sub || '') + ' ' + o.valor).toLowerCase().includes(t)).slice(0, 120);
+      const t = q.value.trim().toLowerCase(), v = todas(t).filter(o => !t || (o.texto + ' ' + (o.sub || '') + ' ' + o.valor).toLowerCase().includes(t)).slice(0, 120);
       L.innerHTML = v.map((o, i) => `<button type="button" class="op" data-i="${i}">${esc(o.texto)}${o.sub ? `<small>${esc(o.sub)}</small>` : ''}</button>`).join('') || '<div class="vacio-msg">Sin coincidencias</div>';
       $$('.op', L).forEach(b => b.onclick = () => cerrar(v[Number(b.dataset.i)]));
       const l = libre && t ? libre(q.value.trim()) : null; lb.hidden = !l;
@@ -2250,9 +2291,9 @@ function bindSeg(root, n, cb) { const s = $(`[data-seg="${n}"]`, root); $$('butt
 const selHTML = (n, ph) => `<button type="button" class="sel" data-sel="${n}"><span class="v ph">${esc(ph || 'Elegir…')}</span></button>`;
 function selSet(root, n, valor, texto) { const b = $(`[data-sel="${n}"]`, root); if (!b) return; b.dataset.valor = valor == null ? '' : valor; b.dataset.texto = texto || ''; const v = $('.v', b); v.textContent = texto || b.dataset.ph || 'Elegir…'; v.classList.toggle('ph', !valor && valor !== 0); b.classList.remove('inval'); }
 const selGet = (root, n) => { const b = $(`[data-sel="${n}"]`, root); return b ? {valor: b.dataset.valor || '', texto: b.dataset.texto || ''} : {valor: '', texto: ''}; };
-function bindSel(root, n, titulo, opcionesFn, cb, libreFn) { const b = $(`[data-sel="${n}"]`, root); b.dataset.ph = b.textContent; b.onclick = async () => { const r = await elegir(titulo, opcionesFn(), libreFn); if (r) { selSet(root, n, r.valor, r.texto); cb && cb(r); } }; }
+function bindSel(root, n, titulo, opcionesFn, cb, libreFn) { const b = $(`[data-sel="${n}"]`, root); b.dataset.ph = b.textContent; b.onclick = async () => { const r = await elegir(titulo, opcionesFn, libreFn); if (r) { selSet(root, n, r.valor, r.texto); cb && cb(r); } }; }
 const opcSelect = (lista, ph) => `<option value="">${esc(ph || 'Elegir…')}</option>` + lista.map(v => { const [val, txt] = Array.isArray(v) ? v : [v, v]; return `<option value="${esc(val)}">${esc(txt)}</option>`; }).join('');
-const campo = (lbl, html, ayuda, id) => `<div class="campo"${id ? ` id="${id}"` : ''}><label>${lbl}</label>${html}${ayuda ? `<div class="ayuda">${ayuda}</div>` : ''}</div>`;
+const campo = (lbl, html, ayuda, id, cls) => `<div class="campo${cls ? ' ' + cls : ''}"${id ? ` id="${id}"` : ''}><label>${lbl}</label>${html}${ayuda ? `<div class="ayuda">${ayuda}</div>` : ''}</div>`;
 function marcar(el, malo) { if (el) el.classList.toggle('inval', !!malo); }
 function listaErrores(root, errores) { if (!errores.length) return; toast(errores[0], 4200); const e = $('.inval, .sino.falta', root); if (e) e.scrollIntoView({block: 'center', behavior: 'smooth'}); }
 
@@ -2275,7 +2316,7 @@ const libreNombre = t => t.length >= 2 ? {valor: t, texto: t, aviso: 'no está e
 /* ---------------------------------------------------------------- COMBUSTIBLE */
 FORM.combustible = {
   html: () => `<div class="card" style="--acc:var(--azul)"><h2>⛽ Control de combustible</h2><div class="cuerpo"><form id="f-combustible" onsubmit="return false">
-    ${campo('¿Qué se abasteció?', segHTML('tipo', [['planta', 'Planta / torre de luz'], ['moto', 'Moto']]))}
+    ${campo('¿Qué se abasteció?', segHTML('tipo', [['planta', 'Planta / torre de luz'], ['moto', 'Moto']]), '', '', 'full')}
     ${cabeceraComun()}
     <div id="cbPlanta"><div class="fila">${campo('Cisterna', '<select name="cisterna"></select>')}${campo('Planta / motor', '<select name="motorPlanta"></select>')}</div>${campo('Conductor de la cisterna', selHTML('condCis', 'Buscar por ficha o nombre'))}</div>
     <div id="cbMoto" hidden>${campo('Moto', '<select name="motorMoto"></select>')}${campo('Quién la abasteció', selHTML('condMoto', 'Buscar por ficha o nombre'))}${campo('Abastecida desde', '<select name="origen"></select>', 'Normalmente la misma moto; cámbialo si la cargó otra unidad.')}</div>
@@ -2336,7 +2377,7 @@ FORM.motos = {
     ${campo('Moto', '<select name="equipo"></select>')}
     <div class="fila">${campo('Odómetro inicial', '<input type="number" name="odo_i" inputmode="decimal" step="any" min="0">', '', 'mtAy')}${campo('Odómetro final', '<input type="number" name="odo_f" inputmode="decimal" step="any" min="0">')}</div>
     ${campo('Recorrido (km)', '<input type="text" name="rec" class="ro" readonly value="—">')}
-    ${campo('Observación', '<textarea name="observacion" placeholder="Opcional: qué se recorrió o qué se encontró"></textarea>')}
+    ${campo('Observación', '<textarea name="observacion" placeholder="Opcional: qué se recorrió o qué se encontró"></textarea>', '', '', 'full')}
     <button class="btn" type="submit">Guardar recorrido</button></form></div></div>`,
   montar(root, datos) {
     cab(root, 'motos'); zafraSel(root); $('[name=equipo]', root).innerHTML = opcSelect(S.mae.equipos.Motos, 'Moto');
@@ -2433,8 +2474,8 @@ FORM.ats = {
     <div class="fila">${campo('Zafra', '<select name="zafra"></select>')}${campo('Frente de cosecha', '<select name="frente"></select>')}</div>
     ${campo('Ficha del administrador', selHTML('administrador', 'Buscar por nombre o ficha'))}
     ${campo('Actividad', '<select name="actividad"><option>Cosecha mecanizada</option><option>Alce Manual</option></select>')}${campo('Código del plantío', selHTML('plantio', 'Buscar código o nombre'), '', 'atsPlAy')}
-    ${ATS_GRUPOS.map(g => `<div class="grupo"><span>${esc(g.t)}</span><button type="button" class="btn sec peq" data-todo="${g.k}">Marcar todo ${g.todo}</button></div>${g.items.map(([k, t]) => sinoHTML(g, k, t)).join('')}${g.k === 'peligros' ? `<div class="campo" style="margin-top:12px" id="atsBio"><label>Riesgos biológicos</label><div class="chips" data-chips="bio">${['Serpientes', 'Abejas', 'No_Aplica'].map(b => `<button type="button" data-v="${b}">${b.replace('_', ' ')}</button>`).join('')}</div></div>` : ''}`).join('')}
-    ${campo('Notas', '<textarea name="notas" placeholder="Hallazgos, acciones tomadas, condiciones del terreno…"></textarea>')}
+    ${ATS_GRUPOS.map(g => `<div class="grupo"><span>${esc(g.t)}</span><button type="button" class="btn sec peq" data-todo="${g.k}">Marcar todo ${g.todo}</button></div><div class="sinos">${g.items.map(([k, t]) => sinoHTML(g, k, t)).join('')}</div>${g.k === 'peligros' ? `<div class="campo full" style="margin-top:12px" id="atsBio"><label>Riesgos biológicos</label><div class="chips" data-chips="bio">${['Serpientes', 'Abejas', 'No_Aplica'].map(b => `<button type="button" data-v="${b}">${b.replace('_', ' ')}</button>`).join('')}</div></div>` : ''}`).join('')}
+    ${campo('Notas', '<textarea name="notas" placeholder="Hallazgos, acciones tomadas, condiciones del terreno…"></textarea>', '', '', 'full')}
     ${campo('Responsable de la actividad', selHTML('responsable', 'Elegir'))}
     <div class="aviso" id="atsProg">Respondidas 0 de ${ATS_TOTAL}</div>
     <button class="btn" type="submit">Guardar análisis</button></form></div></div>`,
@@ -2443,10 +2484,13 @@ FORM.ats = {
     bindSel(root, 'administrador', 'Administrador', () => S.mae.administradores.map(a => ({valor: String(a.id), texto: a.text, sub: 'ficha ' + a.id})), r => { if (!selGet(root, 'responsable').valor) selSet(root, 'responsable', r.texto, r.texto); });
     bindSel(root, 'responsable', 'Responsable de la actividad', () => nombresAdmin(), null, libreNombre);
     const pl = () => (S.plantios[$('[name=zafra]', root).value] || []);
-    bindSel(root, 'plantio', 'Código del plantío', () => pl().map(p => ({valor: p[0], texto: p[0] + ' · ' + p[1], sub: p[2] || ''})), null, t => /^\d{1,5}$/.test(t) ? {valor: t.padStart(5, '0'), texto: t.padStart(5, '0'), aviso: 'no está en la lista'} : null);
-    const avisoPl = async () => { const z = $('[name=zafra]', root).value; await plantiosDe(z); const ay = $('#atsPlAy', root); let h = $('.ayuda', ay); if (!h) { h = document.createElement('div'); h.className = 'ayuda'; ay.appendChild(h); } h.innerHTML = pl().length ? `${pl().length} plantíos de la zafra ${z}` : `<b style="color:var(--bad)">No hay plantíos cargados para la zafra ${z}.</b> Avisa al responsable del sistema; el código escrito a mano será validado al enviar.`; };
+    const frenteElegido = () => $('[name=frente]', root).value;
+    bindSel(root, 'plantio', 'Plantío del programa de corte', q => pl().filter(p => q || !frenteElegido() || !p[3] || p[3] === frenteElegido()).map(p => ({valor: p[0], texto: p[0] + ' · ' + p[1], sub: subPlantio(p)})),
+      r => { const p = pl().find(x => x[0] === r.valor); if (p && p[3] && S.mae.frentes.some(f => f.text === p[3])) $('[name=frente]', root).value = p[3]; infoAts(root); },   // al elegir el plantío se completa el frente del programa
+      t => /^\d{1,5}$/.test(t) ? {valor: t.padStart(5, '0'), texto: t.padStart(5, '0'), aviso: 'no está en la lista'} : null);
+    const avisoPl = async () => { const z = $('[name=zafra]', root).value; await plantiosDe(z); const ay = $('#atsPlAy', root); let h = $('.ayuda', ay); if (!h) { h = document.createElement('div'); h.className = 'ayuda'; ay.appendChild(h); } const hay = pl().length, prog = hay && pl()[0][3]; h.innerHTML = hay ? `${hay} plantíos ${prog ? 'del Programa de Corte' : 'de la zafra'} ${z}${frenteElegido() ? ' · se muestran los del frente ' + frenteElegido() + ' (cambia el frente para ver otros)' : ''}` : `<b style="color:var(--bad)">No hay plantíos cargados para la zafra ${z}.</b> Hay que cargar el Programa de Corte de esa zafra en Archivo_Maestros (menú Plataforma de campo); el código escrito a mano será validado al enviar.`; infoAts(root); };
     const t = turnoActual(); segSet(root, 'turno', t); $('[name=fecha]', root).value = fechaPorDefecto(t); $('[name=zafra]', root).value = zafraDe($('[name=fecha]', root).value);
-    bindSeg(root, 'turno', () => {}); $('[name=fecha]', root).onchange = () => { $('[name=zafra]', root).value = zafraDe($('[name=fecha]', root).value || ymd(new Date())); avisoPl(); }; $('[name=zafra]', root).onchange = avisoPl;
+    bindSeg(root, 'turno', () => {}); $('[name=fecha]', root).onchange = () => { $('[name=zafra]', root).value = zafraDe($('[name=fecha]', root).value || ymd(new Date())); avisoPl(); }; $('[name=zafra]', root).onchange = avisoPl; $('[name=frente]', root).onchange = avisoPl;
     $$('.sino', root).forEach(row => $$('button', row).forEach(b => b.onclick = () => { $$('button', row).forEach(x => x.classList.toggle('on', x === b)); row.dataset.valor = b.dataset.v; row.classList.remove('falta'); prog(); }));
     $$('[data-todo]', root).forEach(b => b.onclick = () => { const g = ATS_GRUPOS.find(x => x.k === b.dataset.todo); $$(`.sino[data-g=${g.k}]`, root).forEach(row => { $$('button', row).forEach(x => x.classList.toggle('on', x.dataset.v === g.todo)); row.dataset.valor = g.todo; row.classList.remove('falta'); }); prog(); });
     $$('[data-chips=bio] button', root).forEach(b => b.onclick = () => {   // "No aplica" es excluyente: no se puede marcar junto a un riesgo real
@@ -2478,7 +2522,8 @@ FORM.ats = {
     let faltan = 0; ATS_GRUPOS.forEach(gr => { d[gr.k] = {}; gr.items.forEach(([k]) => { const row = $(`.sino[data-g=${gr.k}][data-k=${k}]`, root); d[gr.k][k] = row.dataset.valor || ''; if (!d[gr.k][k]) { faltan++; row.classList.add('falta'); } }); });
     if (faltan) er.push(`Faltan ${faltan} preguntas por responder (SI / NO).`);
     if (er.length) { listaErrores(root, er); const f = $('.sino.falta', root); if (f && er[0].startsWith('Falta')) {} return; }
-    const av = []; const bio = d.riesgo_bio; if (bio.includes('No_Aplica') && bio.length > 1) av.push('Marcaste "No aplica" junto con otros riesgos biológicos.');
+    const av = []; const pPrg = (S.plantios[d.zafra] || []).find(x => Number(x[0]) === d.plantio); if (pPrg && pPrg[3] && pPrg[3] !== d.frente) av.push(`El plantío ${pPrg[0]} está programado en el frente ${pPrg[3]}, pero elegiste ${d.frente}.`);
+    const bio = d.riesgo_bio; if (bio.includes('No_Aplica') && bio.length > 1) av.push('Marcaste "No aplica" junto con otros riesgos biológicos.');
     if (d.peligros.tendido === 'NO' && d.riesgos.descarga === 'SI') av.push('Indicas riesgo de descarga eléctrica pero sin tendido eléctrico en el plantío.');
     if (av.length && !await confirmar('Revisa estos datos', av)) return;
     encolar('ats', d); guardarUlt('ats', {frente: d.frente, administrador: String(d.administrador)}); toast('Guardado ✓ ' + (S.online ? 'enviando…' : 'se enviará al volver la señal')); pintarVista(true);
@@ -2491,7 +2536,16 @@ function prefillAts(root, p) {
   const cod = String(p.plantio).padStart(5, '0'), pl = (S.plantios[$('[name=zafra]', root).value] || []).find(x => x[0] === cod);
   selSet(root, 'plantio', cod, pl ? cod + ' · ' + pl[1] : cod + (p.nombre ? ' · ' + p.nombre : ''));
   if (p.frente && S.mae.frentes.some(f => f.text === p.frente)) $('[name=frente]', root).value = p.frente;
-  toast('Plantío ' + cod + ' cargado desde el mapa');
+  infoAts(root); toast('Plantío ' + cod + ' cargado desde el mapa');
+}
+const fechaCorta = iso => iso ? iso.slice(8, 10) + '/' + iso.slice(5, 7) + '/' + iso.slice(0, 4) : '';
+const subPlantio = p => [p[3] && 'Frente ' + p[3], p[4] !== '' && p[4] != null && 'Sem ' + p[4], p[5] && 'Corte ' + fechaCorta(p[5]), p[6] !== '' && p[6] != null && 'Sec ' + p[6], p[2]].filter(Boolean).join(' · ');
+/** Debajo del plantío elegido: lo que dice el Programa de Corte (frente, semana, fecha de corte, secuencia, ha). */
+function infoAts(root) {
+  const campoPl = $('#atsPlAy', root); if (!campoPl) return;
+  let el = $('#atsPlInfo', campoPl); if (!el) { el = document.createElement('div'); el.id = 'atsPlInfo'; el.className = 'ayuda'; el.style.fontWeight = '600'; campoPl.appendChild(el); }
+  const cod = selGet(root, 'plantio').valor, p = cod && (S.plantios[$('[name=zafra]', root).value] || []).find(x => x[0] === cod);
+  el.textContent = p && p[3] ? `Programa: frente ${p[3]} · semana ${p[4]} · corte ${fechaCorta(p[5])} · secuencia ${p[6]}${p[7] !== '' ? ' · ' + fmt(Number(p[7])) + ' ha' : ''}` : '';
 }
 
 /* ======================================================================== VISTAS */
@@ -2557,6 +2611,7 @@ async function abrir(mod, pre) {
   if (!A.auth.logged()) return;
   S.formularios = formulariosDe(); if (!S.formularios.length) { UI.toast('Tu usuario no tiene formularios habilitados.'); return; }
   if (!ROOT) construir();
+  HOST.dataset.modo = document.documentElement.dataset.ui === 'movil' || (!document.documentElement.dataset.ui && innerWidth <= 820) ? 'movil' : 'web';   // la misma versión (web/móvil) que eligió el mapa
   HOST.classList.add('on'); S.pre = pre || null;
   const ms = modulosPermitidos(); S.vista = (mod && ms.includes(mod)) ? mod : (ms.includes(S.vista) || S.vista === 'pendientes' ? S.vista : (ms[0] || 'pendientes'));
   marcarRed(navigator.onLine); pintarBadges(); await cargarMaestros(); await pintarVista(); sincronizar();
@@ -2605,8 +2660,11 @@ function renderCap(){
 function toggleCap(on){ const p=$('capPanel'); on=(on===undefined)?p.hidden:on; p.hidden=!on; $('tCapas').setAttribute('aria-expanded',String(on)); if(on){ renderCap();
   if(A.cur&&A.cur._cen&&A.map.latLngToContainerPoint(A.cur._cen).x<410) A.fitLocal(); } }   // si el panel tapa el plantío, se reencuadra
 $('tCapas').onclick=()=>toggleCap();
-A.options('fr').forEach(v=>$('fFr').add(new Option('Frente '+v,v)));
-A.options('sem').forEach(v=>$('fSem').add(new Option('Semana '+v,String(v))));
+function fillOpts(){ const fr=$('fFr'), se=$('fSem'), vf=fr.value, vs=se.value; fr.length=1; se.length=1;   // se reconstruyen cuando llega un programa nuevo, conservando lo elegido
+  A.options('fr').forEach(v=>fr.add(new Option('Frente '+v,v))); A.options('sem').forEach(v=>se.add(new Option('Semana '+v,String(v)))); fr.value=vf; se.value=vs; }
+fillOpts();
+const subProg=p=>{ if(p&&p.zafra) $('progSub').textContent='Programa de Corte '+p.zafra+(p.borrador?' · '+p.borrador:''); }; subProg(A.programa);
+A.on('programa',p=>{ fillOpts(); subProg(p); });
 [['sin_raja','Sin puntos de raja'],['sin_entrada','Sin ruta de entrada'],['sin_salida','Sin ruta de salida'],['raja_fuera','Rajas fuera del polígono'],
  ['no_llega_lote','Ruta termina a >1 km del lote'],['km','Distancia ingenio-lote ≠ Dist KM Mapeado (>15 %)'],['av','Con autovolteo']].forEach(([v,t])=>$('fFlag').add(new Option(t,v)));
 function renderList(fl){
@@ -2655,8 +2713,10 @@ const $=id=>document.getElementById(id), A=App, sh=$('sheet');
 const setH=()=>document.documentElement.style.setProperty('--sheetH',(sh.classList.contains('peek')||sh.classList.contains('full'))?Math.min(sh.offsetHeight,innerHeight*.5)+'px':'0px');
 A.init('map',()=>{ const cap=$('capSheet')&&!$('capSheet').hidden?$('capSheet').offsetHeight:0, ficha=(sh.classList.contains('peek')||sh.classList.contains('full'))?Math.min(sh.offsetHeight,innerHeight*.45):0;
   return {paddingTopLeft:[20,80],paddingBottomRight:[20,Math.max(cap,ficha)+20]}; });
-A.options('fr').forEach(v=>$('fFr').add(new Option('Frente '+v,v)));
-A.options('sem').forEach(v=>$('fSem').add(new Option('Semana '+v,String(v))));
+function fillOpts(){ const fr=$('fFr'), se=$('fSem'), vf=fr.value, vs=se.value; fr.length=1; se.length=1;   // se reconstruyen cuando llega un programa nuevo, conservando lo elegido
+  A.options('fr').forEach(v=>fr.add(new Option('Frente '+v,v))); A.options('sem').forEach(v=>se.add(new Option('Semana '+v,String(v)))); fr.value=vf; se.value=vs; }
+fillOpts();
+A.on('programa',fillOpts);
 [['sin_raja','Sin puntos de raja'],['sin_entrada','Sin ruta de entrada'],['sin_salida','Sin ruta de salida'],['raja_fuera','Rajas fuera del polígono'],
  ['no_llega_lote','Ruta termina a >1 km del lote'],['km','Distancia ≠ Dist KM Mapeado (>15 %)'],['av','Con autovolteo']].forEach(([v,t])=>$('fFlag').add(new Option(t,v)));
 const row=o=>`<div class="it" data-id="${o.id}" role="option"><span class="c">${o.id}</span><span class="n">${A.esc(o.nm)}</span><span class="tag ${o.src==='26-27'?'t27':o.src?'t26':'tno'}">${o.src||'—'}</span>
@@ -2722,7 +2782,7 @@ const h=location.hash.replace('#p',''); if(A.byId.has(h)) A.select(h);
 <template id="tplWeb">
 <aside id="side">
   <header>
-    <div class="hrow"><div><h1>Rutas por plantío</h1><div class="sub">Programa de Corte 2026-2027 · séptimo borrador</div><div class="sub" id="who" style="color:var(--amber)"></div></div>
+    <div class="hrow"><div><h1>Rutas por plantío</h1><div class="sub" id="progSub">Programa de Corte 2026-2027 · séptimo borrador</div><div class="sub" id="who" style="color:var(--amber)"></div></div>
       <button id="gear" aria-label="Configuración">⚙<span class="qn" hidden></span></button></div>
     <input id="q" type="search" placeholder="Código o nombre del plantío" autocomplete="off" aria-label="Buscar plantío">
     <div class="filters">

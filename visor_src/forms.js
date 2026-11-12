@@ -112,11 +112,11 @@ function confirmar(titulo, lineas, si = 'Confirmar y guardar', no = 'Revisar') {
 /** Selector a pantalla completa con buscador. opciones: [{valor, texto, sub}]. libre(texto) → {valor, texto} | null para aceptar lo escrito. */
 function elegir(titulo, opciones, libre) {
   return new Promise(res => {
-    const sh = $('#sheet'), q = $('#shQ'), L = $('#shL'), lb = $('#shLibre');
+    const sh = $('#sheet'), q = $('#shQ'), L = $('#shL'), lb = $('#shLibre'), todas = typeof opciones === 'function' ? opciones : () => opciones;   // opciones: lista, o función de lo que se escribe en el buscador
     $('#shT').textContent = titulo; q.value = ''; sh.classList.add('on');
     const cerrar = v => { sh.classList.remove('on'); res(v); };
     const pintar = () => {
-      const t = q.value.trim().toLowerCase(), v = opciones.filter(o => !t || (o.texto + ' ' + (o.sub || '') + ' ' + o.valor).toLowerCase().includes(t)).slice(0, 120);
+      const t = q.value.trim().toLowerCase(), v = todas(t).filter(o => !t || (o.texto + ' ' + (o.sub || '') + ' ' + o.valor).toLowerCase().includes(t)).slice(0, 120);
       L.innerHTML = v.map((o, i) => `<button type="button" class="op" data-i="${i}">${esc(o.texto)}${o.sub ? `<small>${esc(o.sub)}</small>` : ''}</button>`).join('') || '<div class="vacio-msg">Sin coincidencias</div>';
       $$('.op', L).forEach(b => b.onclick = () => cerrar(v[Number(b.dataset.i)]));
       const l = libre && t ? libre(q.value.trim()) : null; lb.hidden = !l;
@@ -132,9 +132,9 @@ function bindSeg(root, n, cb) { const s = $(`[data-seg="${n}"]`, root); $$('butt
 const selHTML = (n, ph) => `<button type="button" class="sel" data-sel="${n}"><span class="v ph">${esc(ph || 'Elegir…')}</span></button>`;
 function selSet(root, n, valor, texto) { const b = $(`[data-sel="${n}"]`, root); if (!b) return; b.dataset.valor = valor == null ? '' : valor; b.dataset.texto = texto || ''; const v = $('.v', b); v.textContent = texto || b.dataset.ph || 'Elegir…'; v.classList.toggle('ph', !valor && valor !== 0); b.classList.remove('inval'); }
 const selGet = (root, n) => { const b = $(`[data-sel="${n}"]`, root); return b ? {valor: b.dataset.valor || '', texto: b.dataset.texto || ''} : {valor: '', texto: ''}; };
-function bindSel(root, n, titulo, opcionesFn, cb, libreFn) { const b = $(`[data-sel="${n}"]`, root); b.dataset.ph = b.textContent; b.onclick = async () => { const r = await elegir(titulo, opcionesFn(), libreFn); if (r) { selSet(root, n, r.valor, r.texto); cb && cb(r); } }; }
+function bindSel(root, n, titulo, opcionesFn, cb, libreFn) { const b = $(`[data-sel="${n}"]`, root); b.dataset.ph = b.textContent; b.onclick = async () => { const r = await elegir(titulo, opcionesFn, libreFn); if (r) { selSet(root, n, r.valor, r.texto); cb && cb(r); } }; }
 const opcSelect = (lista, ph) => `<option value="">${esc(ph || 'Elegir…')}</option>` + lista.map(v => { const [val, txt] = Array.isArray(v) ? v : [v, v]; return `<option value="${esc(val)}">${esc(txt)}</option>`; }).join('');
-const campo = (lbl, html, ayuda, id) => `<div class="campo"${id ? ` id="${id}"` : ''}><label>${lbl}</label>${html}${ayuda ? `<div class="ayuda">${ayuda}</div>` : ''}</div>`;
+const campo = (lbl, html, ayuda, id, cls) => `<div class="campo${cls ? ' ' + cls : ''}"${id ? ` id="${id}"` : ''}><label>${lbl}</label>${html}${ayuda ? `<div class="ayuda">${ayuda}</div>` : ''}</div>`;
 function marcar(el, malo) { if (el) el.classList.toggle('inval', !!malo); }
 function listaErrores(root, errores) { if (!errores.length) return; toast(errores[0], 4200); const e = $('.inval, .sino.falta', root); if (e) e.scrollIntoView({block: 'center', behavior: 'smooth'}); }
 
@@ -157,7 +157,7 @@ const libreNombre = t => t.length >= 2 ? {valor: t, texto: t, aviso: 'no está e
 /* ---------------------------------------------------------------- COMBUSTIBLE */
 FORM.combustible = {
   html: () => `<div class="card" style="--acc:var(--azul)"><h2>⛽ Control de combustible</h2><div class="cuerpo"><form id="f-combustible" onsubmit="return false">
-    ${campo('¿Qué se abasteció?', segHTML('tipo', [['planta', 'Planta / torre de luz'], ['moto', 'Moto']]))}
+    ${campo('¿Qué se abasteció?', segHTML('tipo', [['planta', 'Planta / torre de luz'], ['moto', 'Moto']]), '', '', 'full')}
     ${cabeceraComun()}
     <div id="cbPlanta"><div class="fila">${campo('Cisterna', '<select name="cisterna"></select>')}${campo('Planta / motor', '<select name="motorPlanta"></select>')}</div>${campo('Conductor de la cisterna', selHTML('condCis', 'Buscar por ficha o nombre'))}</div>
     <div id="cbMoto" hidden>${campo('Moto', '<select name="motorMoto"></select>')}${campo('Quién la abasteció', selHTML('condMoto', 'Buscar por ficha o nombre'))}${campo('Abastecida desde', '<select name="origen"></select>', 'Normalmente la misma moto; cámbialo si la cargó otra unidad.')}</div>
@@ -218,7 +218,7 @@ FORM.motos = {
     ${campo('Moto', '<select name="equipo"></select>')}
     <div class="fila">${campo('Odómetro inicial', '<input type="number" name="odo_i" inputmode="decimal" step="any" min="0">', '', 'mtAy')}${campo('Odómetro final', '<input type="number" name="odo_f" inputmode="decimal" step="any" min="0">')}</div>
     ${campo('Recorrido (km)', '<input type="text" name="rec" class="ro" readonly value="—">')}
-    ${campo('Observación', '<textarea name="observacion" placeholder="Opcional: qué se recorrió o qué se encontró"></textarea>')}
+    ${campo('Observación', '<textarea name="observacion" placeholder="Opcional: qué se recorrió o qué se encontró"></textarea>', '', '', 'full')}
     <button class="btn" type="submit">Guardar recorrido</button></form></div></div>`,
   montar(root, datos) {
     cab(root, 'motos'); zafraSel(root); $('[name=equipo]', root).innerHTML = opcSelect(S.mae.equipos.Motos, 'Moto');
@@ -315,8 +315,8 @@ FORM.ats = {
     <div class="fila">${campo('Zafra', '<select name="zafra"></select>')}${campo('Frente de cosecha', '<select name="frente"></select>')}</div>
     ${campo('Ficha del administrador', selHTML('administrador', 'Buscar por nombre o ficha'))}
     ${campo('Actividad', '<select name="actividad"><option>Cosecha mecanizada</option><option>Alce Manual</option></select>')}${campo('Código del plantío', selHTML('plantio', 'Buscar código o nombre'), '', 'atsPlAy')}
-    ${ATS_GRUPOS.map(g => `<div class="grupo"><span>${esc(g.t)}</span><button type="button" class="btn sec peq" data-todo="${g.k}">Marcar todo ${g.todo}</button></div>${g.items.map(([k, t]) => sinoHTML(g, k, t)).join('')}${g.k === 'peligros' ? `<div class="campo" style="margin-top:12px" id="atsBio"><label>Riesgos biológicos</label><div class="chips" data-chips="bio">${['Serpientes', 'Abejas', 'No_Aplica'].map(b => `<button type="button" data-v="${b}">${b.replace('_', ' ')}</button>`).join('')}</div></div>` : ''}`).join('')}
-    ${campo('Notas', '<textarea name="notas" placeholder="Hallazgos, acciones tomadas, condiciones del terreno…"></textarea>')}
+    ${ATS_GRUPOS.map(g => `<div class="grupo"><span>${esc(g.t)}</span><button type="button" class="btn sec peq" data-todo="${g.k}">Marcar todo ${g.todo}</button></div><div class="sinos">${g.items.map(([k, t]) => sinoHTML(g, k, t)).join('')}</div>${g.k === 'peligros' ? `<div class="campo full" style="margin-top:12px" id="atsBio"><label>Riesgos biológicos</label><div class="chips" data-chips="bio">${['Serpientes', 'Abejas', 'No_Aplica'].map(b => `<button type="button" data-v="${b}">${b.replace('_', ' ')}</button>`).join('')}</div></div>` : ''}`).join('')}
+    ${campo('Notas', '<textarea name="notas" placeholder="Hallazgos, acciones tomadas, condiciones del terreno…"></textarea>', '', '', 'full')}
     ${campo('Responsable de la actividad', selHTML('responsable', 'Elegir'))}
     <div class="aviso" id="atsProg">Respondidas 0 de ${ATS_TOTAL}</div>
     <button class="btn" type="submit">Guardar análisis</button></form></div></div>`,
@@ -325,10 +325,13 @@ FORM.ats = {
     bindSel(root, 'administrador', 'Administrador', () => S.mae.administradores.map(a => ({valor: String(a.id), texto: a.text, sub: 'ficha ' + a.id})), r => { if (!selGet(root, 'responsable').valor) selSet(root, 'responsable', r.texto, r.texto); });
     bindSel(root, 'responsable', 'Responsable de la actividad', () => nombresAdmin(), null, libreNombre);
     const pl = () => (S.plantios[$('[name=zafra]', root).value] || []);
-    bindSel(root, 'plantio', 'Código del plantío', () => pl().map(p => ({valor: p[0], texto: p[0] + ' · ' + p[1], sub: p[2] || ''})), null, t => /^\d{1,5}$/.test(t) ? {valor: t.padStart(5, '0'), texto: t.padStart(5, '0'), aviso: 'no está en la lista'} : null);
-    const avisoPl = async () => { const z = $('[name=zafra]', root).value; await plantiosDe(z); const ay = $('#atsPlAy', root); let h = $('.ayuda', ay); if (!h) { h = document.createElement('div'); h.className = 'ayuda'; ay.appendChild(h); } h.innerHTML = pl().length ? `${pl().length} plantíos de la zafra ${z}` : `<b style="color:var(--bad)">No hay plantíos cargados para la zafra ${z}.</b> Avisa al responsable del sistema; el código escrito a mano será validado al enviar.`; };
+    const frenteElegido = () => $('[name=frente]', root).value;
+    bindSel(root, 'plantio', 'Plantío del programa de corte', q => pl().filter(p => q || !frenteElegido() || !p[3] || p[3] === frenteElegido()).map(p => ({valor: p[0], texto: p[0] + ' · ' + p[1], sub: subPlantio(p)})),
+      r => { const p = pl().find(x => x[0] === r.valor); if (p && p[3] && S.mae.frentes.some(f => f.text === p[3])) $('[name=frente]', root).value = p[3]; infoAts(root); },   // al elegir el plantío se completa el frente del programa
+      t => /^\d{1,5}$/.test(t) ? {valor: t.padStart(5, '0'), texto: t.padStart(5, '0'), aviso: 'no está en la lista'} : null);
+    const avisoPl = async () => { const z = $('[name=zafra]', root).value; await plantiosDe(z); const ay = $('#atsPlAy', root); let h = $('.ayuda', ay); if (!h) { h = document.createElement('div'); h.className = 'ayuda'; ay.appendChild(h); } const hay = pl().length, prog = hay && pl()[0][3]; h.innerHTML = hay ? `${hay} plantíos ${prog ? 'del Programa de Corte' : 'de la zafra'} ${z}${frenteElegido() ? ' · se muestran los del frente ' + frenteElegido() + ' (cambia el frente para ver otros)' : ''}` : `<b style="color:var(--bad)">No hay plantíos cargados para la zafra ${z}.</b> Hay que cargar el Programa de Corte de esa zafra en Archivo_Maestros (menú Plataforma de campo); el código escrito a mano será validado al enviar.`; infoAts(root); };
     const t = turnoActual(); segSet(root, 'turno', t); $('[name=fecha]', root).value = fechaPorDefecto(t); $('[name=zafra]', root).value = zafraDe($('[name=fecha]', root).value);
-    bindSeg(root, 'turno', () => {}); $('[name=fecha]', root).onchange = () => { $('[name=zafra]', root).value = zafraDe($('[name=fecha]', root).value || ymd(new Date())); avisoPl(); }; $('[name=zafra]', root).onchange = avisoPl;
+    bindSeg(root, 'turno', () => {}); $('[name=fecha]', root).onchange = () => { $('[name=zafra]', root).value = zafraDe($('[name=fecha]', root).value || ymd(new Date())); avisoPl(); }; $('[name=zafra]', root).onchange = avisoPl; $('[name=frente]', root).onchange = avisoPl;
     $$('.sino', root).forEach(row => $$('button', row).forEach(b => b.onclick = () => { $$('button', row).forEach(x => x.classList.toggle('on', x === b)); row.dataset.valor = b.dataset.v; row.classList.remove('falta'); prog(); }));
     $$('[data-todo]', root).forEach(b => b.onclick = () => { const g = ATS_GRUPOS.find(x => x.k === b.dataset.todo); $$(`.sino[data-g=${g.k}]`, root).forEach(row => { $$('button', row).forEach(x => x.classList.toggle('on', x.dataset.v === g.todo)); row.dataset.valor = g.todo; row.classList.remove('falta'); }); prog(); });
     $$('[data-chips=bio] button', root).forEach(b => b.onclick = () => {   // "No aplica" es excluyente: no se puede marcar junto a un riesgo real
@@ -360,7 +363,8 @@ FORM.ats = {
     let faltan = 0; ATS_GRUPOS.forEach(gr => { d[gr.k] = {}; gr.items.forEach(([k]) => { const row = $(`.sino[data-g=${gr.k}][data-k=${k}]`, root); d[gr.k][k] = row.dataset.valor || ''; if (!d[gr.k][k]) { faltan++; row.classList.add('falta'); } }); });
     if (faltan) er.push(`Faltan ${faltan} preguntas por responder (SI / NO).`);
     if (er.length) { listaErrores(root, er); const f = $('.sino.falta', root); if (f && er[0].startsWith('Falta')) {} return; }
-    const av = []; const bio = d.riesgo_bio; if (bio.includes('No_Aplica') && bio.length > 1) av.push('Marcaste "No aplica" junto con otros riesgos biológicos.');
+    const av = []; const pPrg = (S.plantios[d.zafra] || []).find(x => Number(x[0]) === d.plantio); if (pPrg && pPrg[3] && pPrg[3] !== d.frente) av.push(`El plantío ${pPrg[0]} está programado en el frente ${pPrg[3]}, pero elegiste ${d.frente}.`);
+    const bio = d.riesgo_bio; if (bio.includes('No_Aplica') && bio.length > 1) av.push('Marcaste "No aplica" junto con otros riesgos biológicos.');
     if (d.peligros.tendido === 'NO' && d.riesgos.descarga === 'SI') av.push('Indicas riesgo de descarga eléctrica pero sin tendido eléctrico en el plantío.');
     if (av.length && !await confirmar('Revisa estos datos', av)) return;
     encolar('ats', d); guardarUlt('ats', {frente: d.frente, administrador: String(d.administrador)}); toast('Guardado ✓ ' + (S.online ? 'enviando…' : 'se enviará al volver la señal')); pintarVista(true);
@@ -373,7 +377,16 @@ function prefillAts(root, p) {
   const cod = String(p.plantio).padStart(5, '0'), pl = (S.plantios[$('[name=zafra]', root).value] || []).find(x => x[0] === cod);
   selSet(root, 'plantio', cod, pl ? cod + ' · ' + pl[1] : cod + (p.nombre ? ' · ' + p.nombre : ''));
   if (p.frente && S.mae.frentes.some(f => f.text === p.frente)) $('[name=frente]', root).value = p.frente;
-  toast('Plantío ' + cod + ' cargado desde el mapa');
+  infoAts(root); toast('Plantío ' + cod + ' cargado desde el mapa');
+}
+const fechaCorta = iso => iso ? iso.slice(8, 10) + '/' + iso.slice(5, 7) + '/' + iso.slice(0, 4) : '';
+const subPlantio = p => [p[3] && 'Frente ' + p[3], p[4] !== '' && p[4] != null && 'Sem ' + p[4], p[5] && 'Corte ' + fechaCorta(p[5]), p[6] !== '' && p[6] != null && 'Sec ' + p[6], p[2]].filter(Boolean).join(' · ');
+/** Debajo del plantío elegido: lo que dice el Programa de Corte (frente, semana, fecha de corte, secuencia, ha). */
+function infoAts(root) {
+  const campoPl = $('#atsPlAy', root); if (!campoPl) return;
+  let el = $('#atsPlInfo', campoPl); if (!el) { el = document.createElement('div'); el.id = 'atsPlInfo'; el.className = 'ayuda'; el.style.fontWeight = '600'; campoPl.appendChild(el); }
+  const cod = selGet(root, 'plantio').valor, p = cod && (S.plantios[$('[name=zafra]', root).value] || []).find(x => x[0] === cod);
+  el.textContent = p && p[3] ? `Programa: frente ${p[3]} · semana ${p[4]} · corte ${fechaCorta(p[5])} · secuencia ${p[6]}${p[7] !== '' ? ' · ' + fmt(Number(p[7])) + ' ha' : ''}` : '';
 }
 
 /* ======================================================================== VISTAS */
@@ -439,6 +452,7 @@ async function abrir(mod, pre) {
   if (!A.auth.logged()) return;
   S.formularios = formulariosDe(); if (!S.formularios.length) { UI.toast('Tu usuario no tiene formularios habilitados.'); return; }
   if (!ROOT) construir();
+  HOST.dataset.modo = document.documentElement.dataset.ui === 'movil' || (!document.documentElement.dataset.ui && innerWidth <= 820) ? 'movil' : 'web';   // la misma versión (web/móvil) que eligió el mapa
   HOST.classList.add('on'); S.pre = pre || null;
   const ms = modulosPermitidos(); S.vista = (mod && ms.includes(mod)) ? mod : (ms.includes(S.vista) || S.vista === 'pendientes' ? S.vista : (ms[0] || 'pendientes'));
   marcarRed(navigator.onLine); pintarBadges(); await cargarMaestros(); await pintarVista(); sincronizar();

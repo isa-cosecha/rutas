@@ -51,7 +51,7 @@ body.sb-off{grid-template-columns:1fr}body.sb-off #side{display:none}
 <body>
 <aside id="side">
   <header>
-    <div class="hrow"><div><h1>Rutas por plantío</h1><div class="sub">Programa de Corte 2026-2027 · séptimo borrador</div><div class="sub" id="who" style="color:var(--amber)"></div></div>
+    <div class="hrow"><div><h1>Rutas por plantío</h1><div class="sub" id="progSub">Programa de Corte 2026-2027 · séptimo borrador</div><div class="sub" id="who" style="color:var(--amber)"></div></div>
       <button id="gear" aria-label="Configuración">⚙<span class="qn" hidden></span></button></div>
     <input id="q" type="search" placeholder="Código o nombre del plantío" autocomplete="off" aria-label="Buscar plantío">
     <div class="filters">
@@ -106,8 +106,11 @@ function renderCap(){
 function toggleCap(on){ const p=$('capPanel'); on=(on===undefined)?p.hidden:on; p.hidden=!on; $('tCapas').setAttribute('aria-expanded',String(on)); if(on){ renderCap();
   if(A.cur&&A.cur._cen&&A.map.latLngToContainerPoint(A.cur._cen).x<410) A.fitLocal(); } }   // si el panel tapa el plantío, se reencuadra
 $('tCapas').onclick=()=>toggleCap();
-A.options('fr').forEach(v=>$('fFr').add(new Option('Frente '+v,v)));
-A.options('sem').forEach(v=>$('fSem').add(new Option('Semana '+v,String(v))));
+function fillOpts(){ const fr=$('fFr'), se=$('fSem'), vf=fr.value, vs=se.value; fr.length=1; se.length=1;   // se reconstruyen cuando llega un programa nuevo, conservando lo elegido
+  A.options('fr').forEach(v=>fr.add(new Option('Frente '+v,v))); A.options('sem').forEach(v=>se.add(new Option('Semana '+v,String(v)))); fr.value=vf; se.value=vs; }
+fillOpts();
+const subProg=p=>{ if(p&&p.zafra) $('progSub').textContent='Programa de Corte '+p.zafra+(p.borrador?' · '+p.borrador:''); }; subProg(A.programa);
+A.on('programa',p=>{ fillOpts(); subProg(p); });
 [['sin_raja','Sin puntos de raja'],['sin_entrada','Sin ruta de entrada'],['sin_salida','Sin ruta de salida'],['raja_fuera','Rajas fuera del polígono'],
  ['no_llega_lote','Ruta termina a >1 km del lote'],['km','Distancia ingenio-lote ≠ Dist KM Mapeado (>15 %)'],['av','Con autovolteo']].forEach(([v,t])=>$('fFlag').add(new Option(t,v)));
 function renderList(fl){

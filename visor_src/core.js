@@ -310,9 +310,12 @@ App = (() => {
   }
   const esMovil = () => document.documentElement.dataset.ui === 'movil' || (!document.documentElement.dataset.ui && L.Browser.mobile);
   // El plantío seleccionado resalta (amarillo, negrita, grande); los demás son discretos: pequeños, delgados y translúcidos.
-  const estiloEtq = sel => sel
-    ? {fs: 12.5, peso: 700, relleno: '#ffe14d', halo: 'rgba(8,18,12,.88)', ancho: 3.4}
-    : {fs: esMovil() ? 8.5 : 9.5, peso: 500, relleno: 'rgba(255,255,255,.7)', halo: 'rgba(8,18,12,.5)', ancho: 2.2};
+  // Los vecinos además se achican y se vuelven más translúcidos cuanto más lejos está el mapa (con la escala de 500 m son diminutos y tenues).
+  const estiloEtq = (sel, z) => {
+    if (sel) return {fs: 12.5, peso: 700, relleno: '#ffe14d', halo: 'rgba(8,18,12,.88)', ancho: 3.4};
+    const t = Math.max(0, Math.min(1, (z - 13) / 4)), L_ = (a, b) => a + (b - a) * t, m = esMovil();   // t: 0 con zoom ≤ 13, 1 con zoom ≥ 17
+    return {fs: +L_(m ? 5.5 : 6.5, m ? 8.5 : 9.5).toFixed(1), peso: 500, relleno: `rgba(255,255,255,${L_(.4, .7).toFixed(2)})`, halo: `rgba(8,18,12,${L_(.26, .5).toFixed(2)})`, ancho: +L_(1.5, 2.2).toFixed(1)};
+  };
   function dibujarEtiquetas() {
     ETQ.raf = 0; const cv = ETQ.cv; if (!cv || !map) return;
     const tam = map.getSize(), dpr = window.devicePixelRatio || 1; ETQ.ultimo = [];
@@ -321,14 +324,14 @@ App = (() => {
     const c = ETQ.cx; c.setTransform(dpr, 0, 0, dpr, 0, 0); c.clearRect(0, 0, tam.x, tam.y);
     if (!vis.lblHa || map.getZoom() < 13) return;
     const bd = map.getBounds().pad(.05), S = bd.getSouth(), N = bd.getNorth(), W = bd.getWest(), E = bd.getEast();
-    const filt = hasFilters() ? new Set(filtered.map(o => o.id)) : null;
+    const filt = hasFilters() ? new Set(filtered.map(o => o.id)) : null, zoom = map.getZoom();
     c.textAlign = 'center'; c.textBaseline = 'middle'; c.lineJoin = 'round';
     // 1) candidatos: cuadros visibles cuya etiqueta cabe dentro del cuadro
     const cand = [];
     for (const o of D) {
       if (!o._bb || o._bb[2] < S || o._bb[0] > N || o._bb[3] < W || o._bb[1] > E) continue;
       const esSel = !!cur && cur.id === o.id; if (filt && !filt.has(o.id) && !esSel) continue;   // con filtros activos, sólo los plantíos filtrados
-      const est = estiloEtq(esSel); c.font = `${est.peso} ${est.fs}px Barlow, system-ui, sans-serif`;
+      const est = estiloEtq(esSel, zoom); c.font = `${est.peso} ${est.fs}px Barlow, system-ui, sans-serif`;
       for (let i = 0; i < o.pol.length; i++) {
         const t = etiquetaDe(o, i); if (!t) continue;
         const [s2, w2, n2, e2] = t.b; if (n2 < S || s2 > N || e2 < W || w2 > E) continue;
@@ -348,7 +351,7 @@ App = (() => {
       if (!e.sel && choca(r)) continue; marca(r);
       c.font = `${e.est.peso} ${e.est.fs}px Barlow, system-ui, sans-serif`;
       c.lineWidth = e.est.ancho; c.strokeStyle = e.est.halo; c.strokeText(e.txt, e.x, e.y); c.fillStyle = e.est.relleno; c.fillText(e.txt, e.x, e.y);
-      ETQ.ultimo.push({id: e.o.id, q: e.o.pol[e.i].q, txt: e.txt, x: Math.round(e.x), y: Math.round(e.y), sel: e.sel, fs: e.est.fs, r});
+      ETQ.ultimo.push({id: e.o.id, q: e.o.pol[e.i].q, txt: e.txt, x: Math.round(e.x), y: Math.round(e.y), sel: e.sel, fs: e.est.fs, rel: e.est.relleno, r});
       if (++n >= 900) return;
     }
   }

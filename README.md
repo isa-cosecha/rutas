@@ -132,3 +132,11 @@ El programa de corte vive en la hoja **`Programa de Corte`** de `Archivo_Maestro
 - **Cliente (`forms.js`):** al abrir los formularios no se espera al servidor si ya hay catálogos en el teléfono; si están viejos (más de 10 minutos) se actualizan en segundo plano y una sola consulta a la vez. Los plantíos del ATS salen del programa de corte que el mapa ya tiene (sin llamada aparte). Un odómetro guardado y aún sin enviar no se pisa con lo que diga el servidor.
 - **Servidor (`Codigo_Plataforma_v8.gs`):** el programa de corte (~320 KB) se guarda en la caché de Google por trozos (cada valor admite 100 KB) durante 2 minutos y se invalida al cargar un borrador nuevo; los odómetros se guardan 5 minutos y se invalidan al registrar un recorrido o una carga de moto; cada libro se abre una sola vez por ejecución.
 - **Etiquetas de hectáreas:** las del plantío seleccionado resaltan (12.5 px, negrita, amarillo); las demás son pequeñas (9.5 px en computadora, 8.5 px en celular), delgadas y translúcidas, y no se encimen (`estiloEtq` en `core.js`).
+
+## Conexiones visibles solo para el Administrador
+
+En **Mi cuenta**, la sección *Avanzado (conexiones)* (URL del Web App de Apps Script, URL de datos en GitHub y token de GitHub) solo se muestra al **Administrador** de la plataforma (permiso `usuarios_admin`). Para los demás roles ni se dibuja ni se cargan esos valores en los campos, el botón *Guardar* no aparece y, aunque alguien lo destapara con las herramientas del navegador, `Guardar` no cambia nada. Es una protección de pantalla: la URL de Apps Script sigue estando dentro del archivo de la página (la app la necesita para funcionar); lo que protege los datos es el inicio de sesión del servidor. El token de GitHub solo se usa si el repositorio es privado.
+
+## Etiquetas de hectáreas según el zoom
+
+Las de los vecinos se achican y se vuelven más translúcidas cuanto más lejos está el mapa: en celular de 8.5 px / 0.70 de opacidad (zoom 17 o más) a 5.5 px / 0.40 (zoom 13 o menos); en computadora de 9.5 px a 6.5 px. Con la escala de 500 m (zoom 14) miden ~6.3 px y 0.49. El plantío seleccionado conserva 12.5 px, negrita y amarillo a cualquier zoom. Ajustes en `estiloEtq` de `core.js`.

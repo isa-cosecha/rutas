@@ -129,3 +129,4 @@ details.mods[open] summary{border-color:var(--amber)}
 .leaflet-tooltip.tipPl:before{display:none}
 .tipP b{display:block;color:var(--amber);font-size:14px;margin-bottom:5px}.tipP .tc{color:var(--mute);font-size:12px;margin-bottom:2px}
 .tipP .tk{display:grid;grid-template-columns:auto 1fr;gap:2px 16px}.tipP .tk span:nth-child(odd){color:var(--mute)}.tipP .tk span:nth-child(even){text-align:right;font-weight:600}
+#cfgAvz[hidden],#cfgSave[hidden]{display:none!important}

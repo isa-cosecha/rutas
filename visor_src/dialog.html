@@ -92,12 +92,14 @@
       <label>Rol<select id="usrNR"></select></label>
       <button id="usrNC" type="button" class="primary">Crear usuario</button>
     </div>
+    <div class="usrnew2"><label id="usrNFL">Ficha<input id="usrNF" type="text" inputmode="numeric" maxlength="8" autocomplete="off" placeholder="ej. 8247"></label>
+      <div><span class="lbl">Formularios que podrá usar</span><div class="chipsf" id="usrNMods"></div></div></div>
     <div id="usrNM" class="admsub" role="alert"></div>
   </div>
 
   <div class="admstep">
     <div class="admrow"><b>Usuarios</b><input id="usrQ" type="search" placeholder="Buscar por usuario, nombre o rol" autocomplete="off" aria-label="Buscar usuario" style="max-width:300px"><span id="usrCnt" class="admsub"></span></div>
-    <div class="usrwrap"><table class="admt usr"><thead><tr><th>Usuario</th><th>Nombre</th><th>Rol</th><th>Estado</th><th>Último ingreso</th><th></th></tr></thead><tbody id="usrT"></tbody></table></div>
+    <div class="usrwrap"><table class="admt usr"><thead><tr><th>Usuario</th><th>Nombre</th><th>Rol</th><th>Ficha</th><th>Formularios</th><th>Estado</th><th>Último ingreso</th><th></th></tr></thead><tbody id="usrT"></tbody></table></div>
   </div>
 
   <details id="usrPerm"><summary>Permisos por rol</summary><div id="usrPermT" class="usrwrap"></div></details>

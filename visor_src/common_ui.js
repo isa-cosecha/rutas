@@ -84,6 +84,7 @@ UI = (() => {
     } catch { m('Sin conexión con el servidor.'); } };
   if (typeof initAdmin === 'function') initAdmin();   // herramientas de administrador (admin_capas.js)
   if (typeof initAdminUsuarios === 'function') initAdminUsuarios();   // administración de usuarios (admin_usuarios.js)
+  if (typeof initForms === 'function') initForms();   // formularios de campo como módulo (forms.js)
   return {toast, openCfg, ensureLogin};
 })();
 }

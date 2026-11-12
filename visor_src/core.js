@@ -380,7 +380,7 @@ App = (() => {
   async function login(usuario, clave) {
     const j = await api('login', {usuario, clave}, false);
     if (!j.ok || j.cambiar) return j;
-    setSess({token: j.token, exp: j.exp, user: j.usuario, nombre: j.nombre, rol: j.rol, permisos: j.permisos});
+    setSess({token: j.token, exp: j.exp, user: j.usuario, nombre: j.nombre, rol: j.rol, ficha: j.ficha || '', permisos: j.permisos});
     loadPrefsLocal(); applyPrefs(j.prefs);
     emit('login', sess); flush(); refreshStatus();
     return j;
@@ -415,7 +415,7 @@ App = (() => {
       const j = await api('sync');
       if (j.ok) {
         remote = {}; Object.entries(j.status || {}).forEach(([k, v]) => remote[String(k).padStart(5, '0')] = v);
-        if (j.rol && (sess.rol !== j.rol || sess.nombre !== j.nombre || JSON.stringify(sess.permisos) !== JSON.stringify(j.permisos))) { setSess({...sess, rol: j.rol, nombre: j.nombre, permisos: j.permisos}); emit('perfil', sess); }
+        if (j.rol && (sess.rol !== j.rol || sess.nombre !== j.nombre || JSON.stringify(sess.permisos) !== JSON.stringify(j.permisos))) { setSess({...sess, rol: j.rol, nombre: j.nombre, ficha: j.ficha || '', permisos: j.permisos}); emit('perfil', sess); }
         applyPrefs(j.prefs); emit('status');
       }
     } catch {}
@@ -479,9 +479,13 @@ App = (() => {
     return `<div class="kpis"><div><b>${fmt(o.tch)}</b><span>TCH</span></div><div><b>${fmt(o.dP, 1)}</b><span>km ingenio-lote</span></div>
       <div><b>${fmt(o.ha, 1)}</b><span>ha</span></div><div><b>${fmt(o.tm, 0)}</b><span>TM</span></div></div>`;
   }
+  /** Botón de la ficha del plantío que abre el formulario ATS con ese plantío y su frente ya elegidos (sólo si el usuario tiene permiso). */
+  function htmlAtsBtn(o) {
+    return puede('form_ats') ? `<button type="button" class="ffAts" data-ffopen="ats" data-ffsolo="1" data-ffplantio="${esc(o.id)}" data-fffrente="${esc(o.fr || '')}" data-ffnombre="${esc(o.nm || '')}">🦺 Registrar ATS de este plantío</button>` : '';
+  }
   function htmlDetail(o) {
     const q = o.q, w = warnings(o);
-    return `<div class="kv"><span>Fecha de corte</span><span>${o.fc || '—'}</span><span>Frente / Semana / Sec.</span><span>${fmt(o.fr)} / ${fmt(o.sem)} / ${fmt(o.sec)}</span>
+    return htmlAtsBtn(o) + `<div class="kv"><span>Fecha de corte</span><span>${o.fc || '—'}</span><span>Frente / Semana / Sec.</span><span>${fmt(o.fr)} / ${fmt(o.sem)} / ${fmt(o.sec)}</span>
       <span>Variedad / N. cortes</span><span>${fmt(o.var)} / ${fmt(o.nc)}</span><span>TCH (TM/ha)</span><span>${fmt(o.tch)}</span>
       <span>Región / Tenencia</span><span>${fmt(o.reg)} / ${fmt(o.ten)}</span><span>Tipo corte / carretas</span><span>${fmt(o.tc)} / ${fmt(o.car)}</span>
       <span>Ubicación / Mulero</span><span>${fmt(o.ubi)} / ${fmt(o.mul)}</span></div>

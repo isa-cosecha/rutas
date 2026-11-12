@@ -11,7 +11,7 @@ Visor de rutas de entrada y salida, muleo, autovolteo y puntos de raja por plant
 | `docs/` | `lanzador.html` (archivo local), `index.html` (visor completo sin datos) y `visor.json` (versión del visor) | GitHub Actions |
 | `scripts/` | Procesamiento en Python | — |
 | `visor_src/` | Código fuente del visor; `config.json` guarda la URL de Apps Script | Solo si cambias el visor |
-| `apps_script/` | `Codigo.gs` (servidor de usuarios, capas y respuestas) y `harness.js` (pruebas) | Solo si cambias el servidor |
+| ~~`apps_script/`~~ | **Ya no se sube a GitHub.** El servidor único (`Codigo_Plataforma_v5.gs`) contiene los IDs de los libros y se pega directo en Apps Script. Si esta carpeta existe en el repositorio, bórrala | — |
 
 ## Actualizar el mapeo o el programa
 
@@ -68,16 +68,18 @@ Con un usuario **Administrador**: ⚙ *Mi cuenta* > **Administrar usuarios**.
 
 Permisos por rol (se aplican en el servidor; la pantalla solo oculta botones):
 
-| Permiso | Administrador | Supervisor | Consulta |
-|---|:-:|:-:|:-:|
-| Ver mapa, rutas, capas y estado de las respuestas | ✓ | ✓ | ✓ |
-| Registrar "según lo planificado / diferente" | ✓ | ✓ | — |
-| Convertir y publicar las capas del QField | ✓ | — | — |
-| Administrar usuarios, roles y claves | ✓ | — | — |
+| Permiso | Administrador | Supervisor | Administrador de frente | Consulta |
+|---|:-:|:-:|:-:|:-:|
+| Ver mapa, rutas, capas y estado de las respuestas | ✓ | ✓ | ✓ | ✓ |
+| Registrar "según lo planificado / diferente" | ✓ | ✓ | ✓ | — |
+| Formularios: combustible, motos, seguimiento de administradores, ATS | ✓ | ✓ | ✓ | — |
+| Convertir y publicar las capas del QField | ✓ | — | — | — |
+| Administrar usuarios, roles y claves | ✓ | — | — | — |
+
+*Administrador* es quien administra la plataforma. *Administrador de frente* es quien dirige un frente de cosecha: llena formularios y responde rutas, pero no administra nada; necesita **ficha** (así la app precarga su nombre). A cada persona se le pueden limitar los formularios (columna *Formularios* de la hoja `Usuarios`, o las casillas del panel).
 
 Protecciones: un administrador no puede quitarse su propio rol, desactivarse ni restablecer su propia clave desde el panel (usa *Cambiar clave*), y siempre debe quedar al menos un administrador activo. **Emergencia:** si nadie puede entrar como administrador, el menú *Rutas > Crear o reiniciar usuario* de la hoja de Google sigue funcionando.
 
-Ejecutar las pruebas del servidor: `node apps_script/harness.js test`.
 
 ## Capas de apoyo del proyecto QField
 
@@ -94,3 +96,11 @@ El visor integra las capas del proyecto QField (pozos, motores, válvulas, obst�
 *Alternativas:* `Actualizar_capas.bat` (Windows) o `python scripts/exportar_capas.py "<carpeta del proyecto QField>" data` producen el mismo archivo. El workflow actualiza el manifiesto y los visores lo descargan solos. Los shapefiles no se suben a GitHub (la capa de quemas sola pesa más de 100 MB).
 
 **Agregar o ajustar una capa:** edita `scripts/capas_config.json` (archivo, estilo, radio, campos del popup, vínculo). Si agregas una capa nueva, agrega también su id con prefijo `x` en la lista `CAPAS` de `apps_script/Codigo.gs` para que se pueda guardar en el perfil.
+
+## Formularios de campo (módulos de esta misma aplicación)
+
+Combustible, recorrido de motos, seguimiento de administradores y análisis de trabajo seguro (ATS) viven dentro del visor: botón **📝 Formularios** en el mapa (y **🦺 Registrar ATS de este plantío** en la ficha de cada plantío, que abre el ATS con ese plantío y su frente ya cargados). Usan **el mismo inicio de sesión, el mismo servidor y la misma URL** que el mapa, y escriben en los mismos libros y columnas que alimentaba ODK. Código: `visor_src/forms.js` y `forms.css`.
+
+- **Sin conexión:** los registros se guardan en el teléfono y se envían solos; cada uno lleva un identificador único (`instanceID`), así un reenvío nunca duplica.
+- **Catálogos** (zafras, frentes, administradores, equipos, operadores, plantíos): salen de `Archivo_Maestros` y del libro ATS; se guardan en el teléfono y se borran al cerrar sesión.
+- Guía de migración y de puesta en marcha: `LEEME_Migracion.md` (entregada aparte del repositorio).

@@ -5,7 +5,7 @@
 function initAdminUsuarios() {
   const $ = id => document.getElementById(id), A = App, esc = A.esc;
   const puede = () => A.auth.puede('usuarios_admin');
-  let lista = [], roles = ['Administrador', 'Supervisor', 'Consulta'], permisos = {}, etiquetas = {}, yo = '', cargando = false;
+  let lista = [], roles = ['Administrador', 'Supervisor', 'Administrador de frente', 'Consulta'], permisos = {}, etiquetas = {}, forms = [], yo = '', cargando = false;
   const fecha = iso => { if (!iso) return '—'; const d = new Date(iso); return isNaN(d) ? '—' : d.toLocaleString('es-NI', {dateStyle: 'short', timeStyle: 'short'}); };
   const aviso = t => { const el = $('usrNM'); el.textContent = t || ''; };
 
@@ -33,7 +33,8 @@ function initAdminUsuarios() {
     const sc = $('usrDlg').querySelector('.usrwrap'), y = sc ? sc.scrollTop : 0;
     const j = await llamar('usr_listar', {});
     cargando = false; if (!j) return;
-    lista = j.usuarios; roles = j.roles; permisos = j.permisos; etiquetas = j.etiquetas; yo = A.auth.sess.user;
+    lista = j.usuarios; roles = j.roles; permisos = j.permisos; etiquetas = j.etiquetas; forms = j.formularios || []; yo = A.auth.sess.user;
+    pintarNuevosForms();
     const sel = $('usrNR'), previo = sel.value;
     sel.innerHTML = roles.map(r => `<option${r === (previo || 'Supervisor') ? ' selected' : ''}>${esc(r)}</option>`).join('');
     pintarLista(); pintarPermisos();
@@ -41,6 +42,19 @@ function initAdminUsuarios() {
     if ($('usrAud').open) cargarAuditoria();
   }
 
+  const idsDe = u => (u.modulos && u.modulos !== 'todos') ? u.modulos.split(',') : forms.map(f => f.id);
+  const resumenForms = ids => ids.length === forms.length ? 'Todos' : ids.length + ' de ' + forms.length;
+  function celdaForms(u) {   // desplegable con una casilla por formulario (no aplica a "Consulta": ese rol no registra nada)
+    if (u.rol === 'Consulta') return '<span class="admsub" style="margin:0">no aplica</span>';
+    const sel = idsDe(u);
+    return `<details class="mods"><summary>${resumenForms(sel)}</summary><div class="modsl">${forms.map(f => `<label><input type="checkbox" class="um" value="${esc(f.id)}"${sel.includes(f.id) ? ' checked' : ''}> ${esc(f.titulo)}</label>`).join('')}</div></details>`;
+  }
+  function pintarNuevosForms() {
+    const c = $('usrNMods'); if (c.dataset.n === String(forms.length)) return;
+    c.dataset.n = forms.length; c.innerHTML = forms.map(f => `<label><input type="checkbox" value="${esc(f.id)}" checked> ${esc(f.titulo)}</label>`).join('');
+  }
+  const marcadosNuevos = () => [...$('usrNMods').querySelectorAll('input:checked')].map(i => i.value);
+  const valorForms = ids => ids.length === forms.length ? 'todos' : ids;
   function pintarLista() {
     const q = $('usrQ').value.trim().toLowerCase();
     const v = lista.filter(u => !q || (u.usuario + ' ' + u.nombre + ' ' + u.rol).toLowerCase().includes(q));
@@ -51,10 +65,12 @@ function initAdminUsuarios() {
         <td><b>${esc(u.usuario)}</b>${soy ? ' <span class="tag t27">tú</span>' : ''}${u.pendiente ? ' <span class="ptag" title="Aún no cambió su código temporal">Pendiente</span>' : ''}${u.bloqueado ? ' <span class="ptag blq" title="Bloqueado por intentos fallidos">Bloqueado</span>' : ''}</td>
         <td><input class="un" type="text" maxlength="80" value="${esc(u.nombre)}" aria-label="Nombre de ${esc(u.usuario)}"></td>
         <td><select class="ur" aria-label="Rol de ${esc(u.usuario)}" ${soy ? 'disabled title="No puedes cambiar tu propio rol"' : ''}>${roles.map(r => `<option${r === u.rol ? ' selected' : ''}>${esc(r)}</option>`).join('')}</select></td>
+        <td><input class="uf${u.rol === 'Administrador de frente' && !u.ficha ? ' inval' : ''}" type="text" inputmode="numeric" maxlength="8" value="${esc(u.ficha || '')}" placeholder="—" aria-label="Ficha de ${esc(u.usuario)}" style="width:84px"></td>
+        <td>${celdaForms(u)}</td>
         <td><button type="button" class="ua ${u.activo ? 'on' : 'off'}" ${soy ? 'disabled title="No puedes desactivarte a ti mismo"' : ''}>${u.activo ? 'Activo' : 'Inactivo'}</button></td>
         <td>${fecha(u.ultimo)}</td>
         <td style="white-space:nowrap"><button type="button" class="urs" ${soy ? 'disabled title="Tu propia clave se cambia en Mi cuenta > Cambiar clave"' : ''}>Restablecer clave</button>${u.bloqueado ? ' <button type="button" class="udb">Desbloquear</button>' : ''}</td></tr>`;
-    }).join('') : '<tr><td colspan="6" style="color:var(--mute);padding:10px">Sin coincidencias.</td></tr>';
+    }).join('') : '<tr><td colspan="8" style="color:var(--mute);padding:10px">Sin coincidencias.</td></tr>';
   }
 
   function pintarPermisos() {
@@ -86,19 +102,22 @@ function initAdminUsuarios() {
 
   // ---- crear ----
   async function crear() {
-    const u = $('usrNU').value.trim().toLowerCase(), n = $('usrNN').value.trim(), r = $('usrNR').value;
+    const u = $('usrNU').value.trim().toLowerCase(), n = $('usrNN').value.trim(), r = $('usrNR').value, ficha = $('usrNF').value.trim(), mods = marcadosNuevos();
     if (!/^[a-z0-9._-]{3,30}$/.test(u)) return aviso('Usuario inválido: 3 a 30 caracteres (letras, números, punto, guion o guion bajo), sin espacios.');
     if (!n) return aviso('Escribe el nombre completo de la persona.');
+    if (ficha && !/^\d{3,8}$/.test(ficha)) return aviso('La ficha debe ser un número de 3 a 8 dígitos.');
+    if (r === 'Administrador de frente' && !ficha) return aviso('Un "Administrador de frente" necesita su ficha: así la app lo reconoce y precarga su nombre en los formularios.');
+    if (r !== 'Consulta' && !mods.length) return aviso('Elige al menos un formulario (o usa el rol Consulta si sólo debe ver el mapa).');
     if (r === 'Administrador' && !confirm(`¿Dar permisos de ADMINISTRADOR a ${n}? Podrá crear usuarios, cambiar roles y restablecer claves.`)) return;
     aviso(''); $('usrNC').disabled = true;
-    const j = await llamar('usr_crear', {usuario: u, nombre: n, rol: r});
+    const j = await llamar('usr_crear', {usuario: u, nombre: n, rol: r, ficha, formularios: r === 'Consulta' ? 'todos' : valorForms(mods)});
     $('usrNC').disabled = false; if (!j) return;
-    $('usrNU').value = $('usrNN').value = '';
+    $('usrNU').value = $('usrNN').value = $('usrNF').value = ''; $('usrNMods').querySelectorAll('input').forEach(i => { i.checked = true; });
     mostrarCodigo(`Usuario creado: <b>${esc(j.usuario)}</b> (${esc(r)}). Código temporal:`, j.codigo);
     cargar();
   }
   $('usrNC').onclick = crear;
-  [$('usrNU'), $('usrNN')].forEach(el => el.addEventListener('keydown', e => { if (e.key === 'Enter') { e.preventDefault(); crear(); } }));
+  [$('usrNU'), $('usrNN'), $('usrNF')].forEach(el => el.addEventListener('keydown', e => { if (e.key === 'Enter') { e.preventDefault(); crear(); } }));
   $('usrQ').addEventListener('input', pintarLista);
 
   // ---- acciones por fila ----
@@ -106,9 +125,13 @@ function initAdminUsuarios() {
   $('usrT').addEventListener('change', async e => {
     const u = fila(e.target); if (!u) return;
     if (e.target.classList.contains('ur')) {
-      const rol = e.target.value;
+      const rol = e.target.value; let ficha;
       if (!confirm(`¿Cambiar el rol de ${u.nombre} de ${u.rol} a ${rol}?\n\nRige de inmediato, sin que la persona tenga que salir y entrar.`)) { e.target.value = u.rol; return; }
-      const j = await llamar('usr_editar', {usuario: u.usuario, rol});
+      if (rol === 'Administrador de frente' && !u.ficha) {   // este rol necesita ficha: se pide aquí mismo
+        ficha = (prompt(`Ficha de ${u.nombre} (número de 3 a 8 dígitos). Un "Administrador de frente" la necesita:`) || '').trim();
+        if (!/^\d{3,8}$/.test(ficha)) { UI.toast('No se cambió el rol: falta una ficha válida.'); e.target.value = u.rol; return; }
+      }
+      const j = await llamar('usr_editar', ficha ? {usuario: u.usuario, rol, ficha} : {usuario: u.usuario, rol});
       if (!j) e.target.value = u.rol; else UI.toast(`Rol de ${u.usuario}: ${rol}`);
       cargar();
     } else if (e.target.classList.contains('un')) {
@@ -117,6 +140,19 @@ function initAdminUsuarios() {
       const j = await llamar('usr_editar', {usuario: u.usuario, nombre});
       if (!j) e.target.value = u.nombre; else UI.toast('Nombre actualizado');
       cargar();
+    } else if (e.target.classList.contains('uf')) {
+      const ficha = e.target.value.trim();
+      if (ficha === (u.ficha || '')) return;
+      const j = await llamar('usr_editar', {usuario: u.usuario, ficha});
+      if (!j) e.target.value = u.ficha || ''; else UI.toast(ficha ? `Ficha de ${u.usuario}: ${ficha}` : `${u.usuario}: sin ficha`);
+      cargar();
+    } else if (e.target.classList.contains('um')) {
+      const det = e.target.closest('details'), ids = [...det.querySelectorAll('input.um:checked')].map(i => i.value);
+      if (!ids.length) { e.target.checked = true; UI.toast('Debe quedar al menos un formulario. Para quitarlos todos, cambia el rol a Consulta.'); return; }
+      const valor = valorForms(ids), j = await llamar('usr_editar', {usuario: u.usuario, formularios: valor});
+      if (!j) { const prev = idsDe(u); det.querySelectorAll('input.um').forEach(i => { i.checked = prev.includes(i.value); }); return; }
+      u.modulos = valor === 'todos' ? 'todos' : ids.join(','); det.querySelector('summary').textContent = resumenForms(ids);   // sin redibujar la tabla: el desplegable sigue abierto
+      UI.toast(`Formularios de ${u.usuario}: ${resumenForms(ids)}`);
     }
   });
   $('usrT').addEventListener('keydown', e => { if (e.key === 'Enter' && e.target.classList.contains('un')) { e.preventDefault(); e.target.blur(); } });

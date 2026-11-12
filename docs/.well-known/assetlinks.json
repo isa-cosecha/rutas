@@ -1,10 +1,8 @@
-[
-  {
-    "relation": ["delegate_permission/common.handle_all_urls"],
-    "target": {
-      "namespace": "android_app",
-      "package_name": "PEGA_AQUI_EL_ID_DEL_PAQUETE_QUE_USASTE_EN_PWABUILDER",
-      "sha256_cert_fingerprints": ["PEGA_AQUI_LA_HUELLA_SHA-256_QUE_ENTREGA_PWABUILDER"]
-    }
-  }
-]
+[{
+      "relation": ["delegate_permission/common.handle_all_urls"],
+      "target": {
+        "namespace": "android_app",
+        "package_name": "app.web.monitoreo_isacosecha.twa",
+        "sha256_cert_fingerprints": ["AA:CB:62:97:9A:65:D6:A1:53:B0:F3:09:C5:6E:0D:61:C6:70:CE:D3:C7:F6:57:34:52:38:F6:C5:25:B5:9E:28"]
+      }
+    }]

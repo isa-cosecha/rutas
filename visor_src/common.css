@@ -148,5 +148,5 @@ details.mods[open] summary{border-color:var(--amber)}
 .mtabs button.on{border-color:var(--amber);color:var(--amber);font-weight:600}.mtabs small{color:var(--mute);margin-left:4px}.mtabs .mw{color:var(--amber);margin-left:4px}
 .mhd{display:flex;align-items:center;gap:10px;flex-wrap:wrap;margin:6px 0}.mhd input[type=search]{flex:1;min-width:160px;margin:0}
 .mstwrap{max-height:380px}.admt.mst td{vertical-align:middle}.admt.mst input,.admt.mst select{margin:0;min-width:90px;width:100%}
-.admt.mst tr.sucia td{background:rgba(242,177,52,.08)}.admt.mst tr.mnew td{background:rgba(125,211,252,.07)}
+.admt.mst tr.inact td:not(:last-child){opacity:.5}.admt.mst tr.sucia td{background:rgba(242,177,52,.08)}.admt.mst tr.mnew td{background:rgba(125,211,252,.07)}
 #mstMsg{min-height:18px;font-size:13px;color:var(--amber)}#mstMsg[data-ok="1"]{color:#8fd9a8}

@@ -53,7 +53,7 @@ const MAE_FRESCO_MS = 10 * 60 * 1000;   // los catálogos guardados se considera
 function leerCacheMae() {
   if (S.mae) return true;
   const c = LS.get('mae', null); if (!c) return false;
-  S.mae = c.mae; S.odo = Object.assign({}, c.odo, S.odo); S.cfg = c.cfg; S.hoy = c.hoy; S.maeT = c.t; S.mv = c.mv; if (!c.mae || !c.mae.supervisores) S.maeT = 0; return true;   // sin la lista de supervisores = catálogo de una versión anterior: se refresca ya
+  S.mae = c.mae; S.odo = Object.assign({}, c.odo, S.odo); S.cfg = c.cfg; S.hoy = c.hoy; S.maeT = c.t; S.mv = c.mv; if (!c.mae || !c.mae.supervisores || !c.mae.inactivos || (c.mae.administradores[0] && c.mae.administradores[0].puesto === undefined)) S.maeT = 0; return true;   // sin la lista de supervisores = catálogo de una versión anterior: se refresca ya
 }
 /** Un odómetro guardado en este teléfono y todavía sin enviar manda sobre lo que diga el servidor (que aún no lo conoce). */
 function mezclarOdo(servidor) {
@@ -133,7 +133,7 @@ function resumen(m, d) {
   if (m === 'motos') return `${f} ${d.turno} · ${d.equipo} · ${d.odo_i} → ${d.odo_f} (${fmt(d.odo_f - d.odo_i)} km)`;
   if (m === 'camcomb') return `${f} ${d.turno} · ${d.equipo} · ${d.cantidad} gal · ${d.odometro} km`;
   if (m === 'camrec') return `${f} ${d.turno} · ${d.equipo} · ${d.odo_i} → ${d.odo_f} (${fmt(d.odo_f - d.odo_i)} km)`;
-  if (m === 'admin') { const a = S.mae && S.mae.administradores.find(x => x.id === Number(d.administrador)); return `${f} · ${d.frente} · semana ${d.semana} · ${a ? a.text : d.administrador}`; }
+  if (m === 'admin') { const a = S.mae && adminPorId(d.administrador); return `${f} · ${d.frente} · semana ${d.semana} · ${a ? a.text : d.administrador}`; }
   return `${f} ${d.turno} · ${d.frente} · plantío ${String(d.plantio).padStart(5, '0')}`;
 }
 const pendMios = () => S.cola.filter(i => i.uid === me().user);
@@ -185,7 +185,12 @@ function turnoYFecha(root, onChange) {
 const ult = (m, k, d) => (LS.get('ult_' + me().user, {})[m + '_' + k]) || d;
 const guardarUlt = (m, o) => { const u = LS.get('ult_' + me().user, {}); Object.keys(o).forEach(k => { u[m + '_' + k] = o[k]; }); LS.set('ult_' + me().user, u); };
 const cabeceraComun = m => `<div class="fila">${campo('Fecha', '<input type="date" name="fecha">')}${campo('Turno', segHTML('turno', [['Dia', 'Día'], ['Noche', 'Noche']]))}</div>${campo('Zafra', '<select name="zafra"></select>')}`;
-const nombresAdmin = () => S.mae.administradores.map(a => ({valor: a.text, texto: a.text, sub: 'ficha ' + a.id}));
+const inacMae = () => (S.mae && S.mae.inactivos) || {administradores: [], operadores: []};   // lo marcado Activo = No: no se ofrece, pero su nombre se sigue mostrando en registros viejos o pendientes
+const adminPorId = id => S.mae.administradores.find(a => String(a.id) === String(id)) || (inacMae().administradores || []).find(a => String(a.id) === String(id));
+const operadorPorId = id => [...(S.mae.operadores['Operador Cisterna'] || []), ...(S.mae.operadores['Operador Moto'] || []), ...(inacMae().operadores || [])].find(o => String(o.id) === String(id));
+const soloAdmins = () => S.mae.administradores.filter(a => a.puesto !== 'Supervisor');   // quien tiene puesto Supervisor no se elige como administrador
+const nombresAdmin = () => soloAdmins().map(a => ({valor: a.text, texto: a.text, sub: 'ficha ' + a.id}));
+const supervisoresAts = () => [...(S.mae.supervisores || [])].sort((a, b) => a.localeCompare(b, 'es')).map(n => ({valor: n, texto: n}));
 const libreFicha = t => /^\d{3,7}$/.test(t) ? {valor: t, texto: t, aviso: 'ficha que no está en el maestro'} : null;
 const libreNombre = t => t.length >= 2 ? {valor: t, texto: t, aviso: 'no está en el maestro; se guardará tal cual'} : null;
 
@@ -217,7 +222,7 @@ FORM.combustible = {
   },
   set(root, d) {
     segSet(root, 'tipo', d.tipo); $('[name=zafra]', root).value = d.zafra; $('[name=fecha]', root).value = d.fecha; segSet(root, 'turno', d.turno); $('[name=litros]', root).value = d.litros;
-    const cond = String(d.conductor), tx = id => { const o = [...(S.mae.operadores['Operador Cisterna'] || []), ...(S.mae.operadores['Operador Moto'] || [])].find(x => x.id === cond) || S.mae.administradores.find(a => String(a.id) === cond); return o ? o.text : cond; };
+    const cond = String(d.conductor), tx = id => { const o = operadorPorId(cond) || adminPorId(cond); return o ? o.text : cond; };
     if (d.tipo === 'moto') { $('#cbPlanta', root).hidden = true; $('#cbMoto', root).hidden = false; $('#cbOdo', root).hidden = false; $('[name=motorMoto]', root).value = d.motor; $('[name=origen]', root).value = d.cisterna && d.cisterna !== d.motor ? d.cisterna : ''; $('[name=odometro]', root).value = d.odometro; selSet(root, 'condMoto', cond, tx()); }
     else { $('#cbPlanta', root).hidden = false; $('#cbMoto', root).hidden = true; $('#cbOdo', root).hidden = true; $('[name=cisterna]', root).value = d.cisterna; $('[name=motorPlanta]', root).value = d.motor; selSet(root, 'condCis', cond, tx()); }
   },
@@ -402,7 +407,7 @@ FORM.admin = {
     <button class="btn" type="submit">Guardar seguimiento</button></form></div></div>`,
   montar(root, datos) {
     cab(root, 'admin'); zafraSel(root); $('[name=semana]', root).innerHTML = opcSelect(S.mae.semanas.map(s => [s.id, s.text]), 'Semana'); $('[name=frente]', root).innerHTML = opcSelect(S.mae.frentes.map(f => f.text), 'Frente');
-    bindSel(root, 'administrador', 'Administrador', () => S.mae.administradores.map(a => ({valor: String(a.id), texto: a.text, sub: 'ficha ' + a.id})));
+    bindSel(root, 'administrador', 'Administrador', () => soloAdmins().map(a => ({valor: String(a.id), texto: a.text, sub: 'ficha ' + a.id})));
     const hoy = fechaPorDefecto('Dia'); $('[name=fecha]', root).value = hoy; $('[name=zafra]', root).value = zafraDe(hoy);
     const sem = () => { const s = semanaSugerida($('[name=zafra]', root).value, $('[name=fecha]', root).value), ay = $('#adSemAy', root); if (s) { $('[name=semana]', root).value = s; } let h = $('.ayuda', ay); if (!h) { h = document.createElement('div'); h.className = 'ayuda'; ay.appendChild(h); } h.textContent = s ? 'Sugerida según la fecha' : ''; };
     $('[name=fecha]', root).onchange = () => { $('[name=zafra]', root).value = zafraDe($('[name=fecha]', root).value || hoy); sem(); }; $('[name=zafra]', root).onchange = sem;
@@ -414,7 +419,7 @@ FORM.admin = {
     $('#f-admin').onsubmit = e => { e.preventDefault(); FORM.admin.enviar(root); return false; };
   },
   set(root, d) {
-    $('[name=zafra]', root).value = d.zafra; $('[name=fecha]', root).value = d.fecha; $('[name=semana]', root).value = d.semana; $('[name=frente]', root).value = d.frente; const a = S.mae.administradores.find(x => x.id === Number(d.administrador)); selSet(root, 'administrador', String(d.administrador), a ? a.text : String(d.administrador));
+    $('[name=zafra]', root).value = d.zafra; $('[name=fecha]', root).value = d.fecha; $('[name=semana]', root).value = d.semana; $('[name=frente]', root).value = d.frente; const a = adminPorId(d.administrador); selSet(root, 'administrador', String(d.administrador), a ? a.text : String(d.administrador));
     ['hrs', 'tm', 'lt_hr', 'lt_tm', 'tm_hrs_motor'].forEach(k => { $(`[name=${k}]`, root).value = d[k]; }); SLIDERS.forEach(([k]) => { const r = $(`[name=${k}]`, root); r.value = d[k]; r.oninput(); });
   },
   async enviar(root) {
@@ -452,12 +457,16 @@ FORM.ats = {
     ${ATS_GRUPOS.map(g => `<div class="grupo"><span>${esc(g.t)}</span><button type="button" class="btn sec peq" data-todo="${g.k}">Marcar todo ${g.todo}</button></div><div class="sinos">${g.items.map(([k, t]) => sinoHTML(g, k, t)).join('')}</div>${g.k === 'peligros' ? `<div class="campo full" style="margin-top:12px" id="atsBio"><label>Riesgos biológicos</label><div class="chips" data-chips="bio">${['Serpientes', 'Abejas', 'No_Aplica'].map(b => `<button type="button" data-v="${b}">${b.replace('_', ' ')}</button>`).join('')}</div></div>` : ''}`).join('')}
     ${campo('Notas', '<textarea name="notas" placeholder="Hallazgos, acciones tomadas, condiciones del terreno…"></textarea>', '', '', 'full')}
     ${campo('Responsable de la actividad', selHTML('responsable', 'Elegir'))}
+    ${campo('Supervisor a cargo de la actividad', selHTML('supervisor', 'Buscar por nombre'))}<div id="atsSupAv"></div>
     <div class="aviso" id="atsProg">Respondidas 0 de ${ATS_TOTAL}</div>
     <button class="btn" type="submit">Guardar análisis</button></form></div></div>`,
   async montar(root, datos) {
     cab(root, 'ats'); zafraSel(root); $('[name=frente]', root).innerHTML = opcSelect(S.mae.frentes.map(f => f.text), 'Frente');
-    bindSel(root, 'administrador', 'Administrador', () => S.mae.administradores.map(a => ({valor: String(a.id), texto: a.text, sub: 'ficha ' + a.id})), r => { if (!selGet(root, 'responsable').valor) selSet(root, 'responsable', r.texto, r.texto); });
+    bindSel(root, 'administrador', 'Administrador', () => soloAdmins().map(a => ({valor: String(a.id), texto: a.text, sub: 'ficha ' + a.id})), r => { if (!selGet(root, 'responsable').valor) selSet(root, 'responsable', r.texto, r.texto); });
     bindSel(root, 'responsable', 'Responsable de la actividad', () => nombresAdmin(), null, libreNombre);
+    bindSel(root, 'supervisor', 'Supervisor a cargo', supervisoresAts, null, null);
+    $('#atsSupAv', root).innerHTML = supervisoresAts().length ? '' : '<div class="aviso">No hay supervisores cargados. El administrador debe agregarlos en <b>Mi cuenta → Administrar maestros</b> (tabla Supervisores, o con puesto Supervisor en Administradores).</div>';
+    { const us = ult('ats', 'supervisor', ''); if (us && supervisoresAts().some(x => x.valor === us)) selSet(root, 'supervisor', us, us); }   // el mismo de la última vez; se puede cambiar
     const pl = () => (S.plantios[$('[name=zafra]', root).value] || []);
     const frenteElegido = () => $('[name=frente]', root).value;
     bindSel(root, 'plantio', 'Plantío del programa de corte', q => pl().filter(p => q || !frenteElegido() || !p[3] || p[3] === frenteElegido()).map(p => ({valor: p[0], texto: p[0] + ' · ' + p[1], sub: subPlantio(p)})),
@@ -482,18 +491,18 @@ FORM.ats = {
   },
   set(root, d) {
     $('[name=zafra]', root).value = d.zafra; $('[name=fecha]', root).value = d.fecha; segSet(root, 'turno', d.turno); $('[name=frente]', root).value = d.frente; $('[name=actividad]', root).value = d.actividad; $('[name=notas]', root).value = d.notas || '';
-    const a = S.mae.administradores.find(x => x.id === Number(d.administrador)); selSet(root, 'administrador', String(d.administrador), a ? a.text : String(d.administrador)); selSet(root, 'responsable', d.responsable, d.responsable);
+    const a = adminPorId(d.administrador); selSet(root, 'administrador', String(d.administrador), a ? a.text : String(d.administrador)); selSet(root, 'responsable', d.responsable, d.responsable); if (d.supervisor) selSet(root, 'supervisor', d.supervisor, d.supervisor);
     const p = (S.plantios[d.zafra] || []).find(x => Number(x[0]) === Number(d.plantio)); const cod = String(d.plantio).padStart(5, '0'); selSet(root, 'plantio', cod, p ? cod + ' · ' + p[1] : cod);
     ATS_GRUPOS.forEach(g => g.items.forEach(([k]) => { const v = (d[g.k] || {})[k], row = $(`.sino[data-g=${g.k}][data-k=${k}]`, root); if (v) { row.dataset.valor = v; $$('button', row).forEach(x => x.classList.toggle('on', x.dataset.v === v)); } }));
     $$('[data-chips=bio] button', root).forEach(b => b.classList.toggle('on', (d.riesgo_bio || []).includes(b.dataset.v))); if (d.inicio) root.dataset.inicio = d.inicio; FORM.ats._prog();
   },
   async enviar(root) {
     const g = n => $(`[name=${n}]`, root), er = [], mk = (el, bad, msg) => { marcar(el, bad); if (bad) er.push(msg); };
-    const adm = selGet(root, 'administrador'), pl = selGet(root, 'plantio'), resp = selGet(root, 'responsable');
-    const d = {zafra: g('zafra').value, fecha: g('fecha').value, turno: segGet(root, 'turno'), frente: g('frente').value, administrador: Number(adm.valor), actividad: g('actividad').value, plantio: Number(pl.valor), notas: g('notas').value.trim(), responsable: resp.valor, inicio: root.dataset.inicio, dispositivo: dispositivo(),
+    const adm = selGet(root, 'administrador'), pl = selGet(root, 'plantio'), resp = selGet(root, 'responsable'), supv = selGet(root, 'supervisor');
+    const d = {zafra: g('zafra').value, fecha: g('fecha').value, turno: segGet(root, 'turno'), frente: g('frente').value, administrador: Number(adm.valor), actividad: g('actividad').value, plantio: Number(pl.valor), notas: g('notas').value.trim(), responsable: resp.valor, supervisor: supv.valor, inicio: root.dataset.inicio, dispositivo: dispositivo(),
       riesgo_bio: $$('[data-chips=bio] button.on', root).map(b => b.dataset.v)};
     mk(g('fecha'), !d.fecha, 'Falta la fecha.'); mk(g('frente'), !d.frente, 'Elige el frente.'); mk($('[data-sel=administrador]', root), !d.administrador, 'Elige el administrador.'); mk($('[data-sel=plantio]', root), !d.plantio, 'Elige el código del plantío.');
-    mk($('[data-sel=responsable]', root), !d.responsable, 'Elige el responsable de la actividad.'); mk($('#atsBio', root), !d.riesgo_bio.length, 'Marca el riesgo biológico (o "No aplica").');
+    mk($('[data-sel=responsable]', root), !d.responsable, 'Elige el responsable de la actividad.'); mk($('[data-sel=supervisor]', root), !d.supervisor, 'Elige el supervisor a cargo de la actividad.'); mk($('#atsBio', root), !d.riesgo_bio.length, 'Marca el riesgo biológico (o "No aplica").');
     let faltan = 0; ATS_GRUPOS.forEach(gr => { d[gr.k] = {}; gr.items.forEach(([k]) => { const row = $(`.sino[data-g=${gr.k}][data-k=${k}]`, root); d[gr.k][k] = row.dataset.valor || ''; if (!d[gr.k][k]) { faltan++; row.classList.add('falta'); } }); });
     if (faltan) er.push(`Faltan ${faltan} preguntas por responder (SI / NO).`);
     if (er.length) { listaErrores(root, er); const f = $('.sino.falta', root); if (f && er[0].startsWith('Falta')) {} return; }
@@ -501,7 +510,7 @@ FORM.ats = {
     const bio = d.riesgo_bio; if (bio.includes('No_Aplica') && bio.length > 1) av.push('Marcaste "No aplica" junto con otros riesgos biológicos.');
     if (d.peligros.tendido === 'NO' && d.riesgos.descarga === 'SI') av.push('Indicas riesgo de descarga eléctrica pero sin tendido eléctrico en el plantío.');
     if (av.length && !await confirmar('Revisa estos datos', av)) return;
-    encolar('ats', d); guardarUlt('ats', {frente: d.frente, administrador: String(d.administrador)}); toast('Guardado ✓ ' + (S.online ? 'enviando…' : 'se enviará al volver la señal')); pintarVista(true);
+    encolar('ats', d); guardarUlt('ats', {frente: d.frente, administrador: String(d.administrador), supervisor: d.supervisor}); toast('Guardado ✓ ' + (S.online ? 'enviando…' : 'se enviará al volver la señal')); pintarVista(true);
   }
 };
 

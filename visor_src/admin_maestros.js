@@ -50,10 +50,12 @@ function initAdminMaestros() {
     datos = j; if (!datos.tablas[tabla]) tabla = datos.orden[0];
     pintarTabs(); pintar(); restaurarBorradores(borr, soltar); if (sc) sc.scrollTop = y;
   }
+  const inactiva = (t, r) => { const i = t.cols.findIndex(c => c.k === 'activo'); return i >= 0 && ['no', 'inactivo', 'inactiva', 'false', '0'].includes(String(r.v[i] == null ? '' : r.v[i]).trim().toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '')); };
+  const nInact = t => t.ok ? t.filas.filter(r => inactiva(t, r)).length : 0;
   function pintarTabs() {
     $('mstTabs').innerHTML = datos.orden.map(k => { const t = datos.tablas[k], aten = k === 'ats_admin' && datos.faltanAts.length;
-      const tr = datos.traer || {equipos: [], supervisores: []}, falta = (k === 'equipos' && tr.equipos.length) || (k === 'supervisores' && tr.supervisores.length);
-      return `<button type="button" role="tab" data-t="${k}" class="${k === tabla ? 'on' : ''}" aria-selected="${k === tabla}">${esc(t.titulo)} <small>${t.ok ? t.filas.length : '!'}</small>${aten ? '<span class="mw" title="Faltan fichas">⚠</span>' : ''}${falta ? '<span class="mw" title="Hay camionetas o supervisores en las hojas que aún no están aquí">⚠</span>' : ''}</button>`; }).join('');
+      const tr = datos.traer || {equipos: [], supervisores: []}, falta = (k === 'equipos' && tr.equipos.length) || (k === 'supervisores' && tr.supervisores.length), faltaP = k === 'administradores' && (datos.sinPuesto || (datos.faltanMaestro || []).length);
+      return `<button type="button" role="tab" data-t="${k}" class="${k === tabla ? 'on' : ''}" aria-selected="${k === tabla}">${esc(t.titulo)} <small>${t.ok ? t.filas.length : '!'}${nInact(t) ? ' · ' + nInact(t) + ' inact.' : ''}</small>${aten ? '<span class="mw" title="Faltan fichas">⚠</span>' : ''}${falta ? '<span class="mw" title="Hay camionetas o supervisores en las hojas que aún no están aquí">⚠</span>' : ''}${faltaP ? '<span class="mw" title="Faltan puestos o fichas del ATS">⚠</span>' : ''}</button>`; }).join('');
   }
   // un control por tipo de dato (el servidor vuelve a validar todo)
   function control(c, v, id) {
@@ -65,7 +67,14 @@ function initAdminMaestros() {
   }
   function pintar() {
     const t = datos.tablas[tabla], q = $('mstQ').value.trim().toLowerCase();
-    $('mstNota').textContent = t.nota || '';
+    let notaTxt = t.nota || '';
+    if (tabla === 'administradores') {   // lo que falta completar en las personas: puesto y fichas que sólo están en el ATS
+      const x = [], fm = datos.faltanMaestro || [];
+      if (datos.sinPuesto) x.push(`${datos.sinPuesto} persona(s) sin puesto (mientras tanto cuentan como Administrador de frente).`);
+      if (fm.length) x.push('Están en la hoja del ATS pero no aquí: ' + fm.map(p => p.id + ' ' + p.texto).join(', ') + '. Agrégalas con su puesto.');
+      notaTxt = [notaTxt].concat(x).join(' ');
+    }
+    $('mstNota').textContent = notaTxt;
     const falta = datos.faltanAts.length, mostrarAts = (tabla === 'administradores' || tabla === 'ats_admin') && falta > 0;
     $('mstAts').hidden = !mostrarAts; $('mstAts').textContent = `Completar el ATS (${falta} ficha${falta === 1 ? '' : 's'} faltan)`;
     $('mstAts').title = mostrarAts ? 'Faltan en la hoja del ATS: ' + datos.faltanAts.map(x => x.id + ' ' + x.texto).join(', ') : '';
@@ -74,14 +83,16 @@ function initAdminMaestros() {
     $('mstTraer').title = mostrarTr ? `De la zafra ${tr.zafra}: ${tr.equipos.join(', ') || '—'} · ${tr.supervisores.join(', ') || '—'}` : '';
     if (!t.ok) { $('mstH').innerHTML = ''; $('mstT').innerHTML = `<tr><td style="color:var(--amber);padding:10px">${esc(t.error || 'Esta tabla no está disponible.')}</td></tr>`; $('mstCnt').textContent = ''; return; }
     $('mstH').innerHTML = `<tr>${t.cols.map(c => `<th>${esc(c.t)}${c.opc ? ' <span class="admsub" style="margin:0">(opcional)</span>' : ''}</th>`).join('')}<th>Fila</th><th></th></tr>`;
-    const filas = t.filas.filter(r => !q || r.v.join(' ').toLowerCase().includes(q));
-    $('mstCnt').textContent = `${filas.length} de ${t.filas.length}`;
+    const tieneAct = t.cols.some(c => c.k === 'activo'), ocIn = tieneAct && $('mstOcIn').checked; $('mstOcInL').hidden = !tieneAct;
+    const filas = t.filas.filter(r => (!q || r.v.join(' ').toLowerCase().includes(q)) && !(ocIn && inactiva(t, r)));
+    $('mstCnt').textContent = `${filas.length} de ${t.filas.length}${nInact(t) ? ' · ' + nInact(t) + ' inactivo' + (nInact(t) === 1 ? '' : 's') : ''}`;
     const nueva = `<tr class="mnew" data-nueva="1">${t.cols.map(c => `<td>${control(c, '')}</td>`).join('')}<td class="admsub">nueva</td><td><button type="button" class="mag primary">Agregar</button></td></tr>`;
-    $('mstT').innerHTML = nueva + filas.map(r => `<tr data-f="${r.fila}" data-antes="${esc(JSON.stringify(r.v))}">${t.cols.map((c, i) => `<td>${control(c, r.v[i])}</td>`).join('')}<td class="admsub">${r.fila}</td><td style="white-space:nowrap"><button type="button" class="mgu" disabled>Guardar</button> <button type="button" class="mel">Eliminar</button></td></tr>`).join('');
+    $('mstT').innerHTML = nueva + filas.map(r => `<tr class="${inactiva(t, r) ? 'inact' : ''}" data-f="${r.fila}" data-antes="${esc(JSON.stringify(r.v))}">${t.cols.map((c, i) => `<td>${control(c, r.v[i])}</td>`).join('')}<td class="admsub">${r.fila}</td><td style="white-space:nowrap"><button type="button" class="mgu" disabled>Guardar</button> <button type="button" class="mel">Eliminar</button></td></tr>`).join('');
   }
   const valores = tr => Object.fromEntries([...tr.querySelectorAll('[data-k]')].map(i => [i.dataset.k, i.value]));
   $('mstTabs').onclick = e => { const b = e.target.closest('button[data-t]'); if (!b) return; tabla = b.dataset.t; aviso(''); $('mstQ').value = ''; pintarTabs(); pintar(); };   // (los borradores sin guardar de la otra tabla se descartan al cambiar de pestaña)
   $('mstQ').oninput = () => { if (datos) pintar(); };
+  $('mstOcIn').onchange = () => { if (datos) pintar(); };
   $('mstT').addEventListener('input', e => { const tr = e.target.closest('tr[data-f]'); if (!tr) return; const b = tr.querySelector('.mgu'); b.disabled = false; tr.classList.add('sucia'); });
   $('mstT').addEventListener('keydown', e => { if (e.key !== 'Enter' || !e.target.matches('[data-k]')) return; e.preventDefault(); const tr = e.target.closest('tr'); const b = tr.querySelector('.mag, .mgu:not([disabled])'); if (b) b.click(); });
   $('mstT').addEventListener('click', async e => {

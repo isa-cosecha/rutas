@@ -160,3 +160,16 @@ Las de los vecinos se achican y se vuelven más translúcidas cuanto más lejos 
 - **Odómetros:** `odometros_()` combina las dos hojas de camionetas (el último por fecha; el mismo día gana el mayor) y se invalida al guardar cualquiera de los dos formularios.
 - **Cantidad en galones:** rótulo en `forms.js` y límites en `AVISOS` (`camGal`, `kmGal`, `odoSaltoCam`, `recorridoCam`); el rechazo del servidor (60) está en `filaCamComb_`.
 - Rótulo de *Control de combustible*: "Planta / Cisterna".
+
+## Puestos y supervisor del ATS (v12)
+
+- `MAESTROS_DEF.administradores` ahora tiene `Puesto` (`PUESTOS`: Administrador de frente / Supervisor, opcional) y `Nombre completo` (opcional). `maestros_()` devuelve `puesto` y `completo` por persona y una lista `supervisores` unificada (tabla `Supervisores` + personas con puesto Supervisor, sin repetir por nombre normalizado). `MAESTROS_V = 12`.
+- ATS: `filaAts_` exige `supervisor` en esa lista y lo escribe en la columna 41 (*Supervisor*); la 42 es el responsable y la 47 quien registró (antes la 41 llevaba a quien registraba).
+- Cliente: `soloAdmins()` excluye a los supervisores de los selectores de administrador y responsable; `supervisoresAts()` alimenta el campo nuevo.
+
+## Activo / inactivo en los maestros (v13)
+
+- `ACTIVO = ['Sí','No']`: columna opcional **al final** de `administradores`, `equipos`, `operadores` y `supervisores` (vacío = activo). `esInactivo_()` también reconoce `no`, `inactivo`, `inactiva`, `false` y `0`.
+- `maestros_()` devuelve **sólo lo activo** en las listas que usan los formularios, más `inactivos` (`administradores`, `operadores`, `equipos` por categoría) y `inact` (nombres y códigos inactivos, sólo para explicar el rechazo en `enLista_` y en las validaciones de ficha). `MAESTROS_V = 13`.
+- Cliente: `adminPorId()` y `operadorPorId()` buscan también en `inactivos` para seguir mostrando nombres en registros viejos o pendientes. El editor atenúa las filas inactivas, cuenta las inactivas por pestaña y trae el filtro *Ocultar inactivos*.
+- `escribirMae_` completa con vacíos las columnas que falten, así que añadir una columna a una tabla no obliga a cambiar a quienes escriben en ella.

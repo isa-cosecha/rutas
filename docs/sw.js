@@ -4,8 +4,8 @@
  *  · Íconos, manifiesto y página sin conexión: guardados al instalar.
  *  · Teselas del mapa satelital que ya viste: se guardan (hasta MAX_TESELAS) para ver el fondo del mapa sin señal.
  *  · Los datos (GitHub) y el servidor (Google Apps Script) NO pasan por aquí: la app los guarda en el teléfono por su cuenta.
- * Versión de esta compilación: d477ee6c485a (cambia en cada actualización de la app; así el teléfono sabe que hay algo nuevo). */
-const VERSION = 'd477ee6c485a';
+ * Versión de esta compilación: f8f4e17e327f (cambia en cada actualización de la app; así el teléfono sabe que hay algo nuevo). */
+const VERSION = 'f8f4e17e327f';
 const CACHE = 'rutas-campo-' + VERSION, TESELAS = 'rutas-campo-teselas';
 const CACHEAR_TESELAS = true, MAX_TESELAS = 600, HOST_TESELAS = 'server.arcgisonline.com';
 const BASE = new URL('./', self.location).pathname;                      // p. ej. /rutas/

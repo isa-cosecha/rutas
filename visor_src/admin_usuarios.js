@@ -42,19 +42,20 @@ function initAdminUsuarios() {
     if ($('usrAud').open) cargarAuditoria();
   }
 
-  const idsDe = u => (u.modulos && u.modulos !== 'todos') ? u.modulos.split(',') : forms.map(f => f.id);
-  const resumenForms = ids => ids.length === forms.length ? 'Todos' : ids.length + ' de ' + forms.length;
+  const idsDe = u => u.modulos === 'ninguno' ? [] : (u.modulos && u.modulos !== 'todos') ? u.modulos.split(',') : forms.map(f => f.id);
+  const planDe = u => u.planificacion !== false;   // registro de la planificación (según lo planificado / diferente): vacío = habilitado
+  const resumenForms = (ids, plan) => (ids.length === forms.length && plan) ? 'Todo' : (!ids.length && !plan) ? 'Ninguno' : (!ids.length ? 'Solo planificación' : ids.length + ' de ' + forms.length + (plan ? ' + planif.' : ''));
   function celdaForms(u) {   // desplegable con una casilla por formulario (no aplica a "Consulta": ese rol no registra nada)
     if (u.rol === 'Consulta') return '<span class="admsub" style="margin:0">no aplica</span>';
-    const sel = idsDe(u);
-    return `<details class="mods"><summary>${resumenForms(sel)}</summary><div class="modsl">${forms.map(f => `<label><input type="checkbox" class="um" value="${esc(f.id)}"${sel.includes(f.id) ? ' checked' : ''}> ${esc(f.titulo)}</label>`).join('')}</div></details>`;
+    const sel = idsDe(u), plan = planDe(u);
+    return `<details class="mods"><summary>${resumenForms(sel, plan)}</summary><div class="modsl">${forms.map(f => `<label><input type="checkbox" class="um" value="${esc(f.id)}"${sel.includes(f.id) ? ' checked' : ''}> ${esc(f.titulo)}</label>`).join('')}<label class="planl"><input type="checkbox" class="up"${plan ? ' checked' : ''}> Registrar planificación en el mapa</label></div></details>`;
   }
   function pintarNuevosForms() {
     const c = $('usrNMods'); if (c.dataset.n === String(forms.length)) return;
-    c.dataset.n = forms.length; c.innerHTML = forms.map(f => `<label><input type="checkbox" value="${esc(f.id)}" checked> ${esc(f.titulo)}</label>`).join('');
+    c.dataset.n = forms.length; c.innerHTML = forms.map(f => `<label><input type="checkbox" value="${esc(f.id)}" checked> ${esc(f.titulo)}</label>`).join('') + '<label class="planl"><input type="checkbox" class="unp" checked> Registrar planificación en el mapa</label>';
   }
-  const marcadosNuevos = () => [...$('usrNMods').querySelectorAll('input:checked')].map(i => i.value);
-  const valorForms = ids => ids.length === forms.length ? 'todos' : ids;
+  const marcadosNuevos = () => [...$('usrNMods').querySelectorAll('input:checked:not(.unp)')].map(i => i.value);
+  const valorForms = ids => ids.length === forms.length ? 'todos' : (ids.length ? ids : 'ninguno');   // 'ninguno' = ningún formulario
   function pintarLista() {
     const q = $('usrQ').value.trim().toLowerCase();
     const v = lista.filter(u => !q || (u.usuario + ' ' + u.nombre + ' ' + u.rol).toLowerCase().includes(q));
@@ -107,10 +108,9 @@ function initAdminUsuarios() {
     if (!n) return aviso('Escribe el nombre completo de la persona.');
     if (ficha && !/^\d{3,8}$/.test(ficha)) return aviso('La ficha debe ser un número de 3 a 8 dígitos.');
     if (r === 'Administrador de frente' && !ficha) return aviso('Un "Administrador de frente" necesita su ficha: así la app lo reconoce y precarga su nombre en los formularios.');
-    if (r !== 'Consulta' && !mods.length) return aviso('Elige al menos un formulario (o usa el rol Consulta si sólo debe ver el mapa).');
     if (r === 'Administrador' && !confirm(`¿Dar permisos de ADMINISTRADOR a ${n}? Podrá crear usuarios, cambiar roles y restablecer claves.`)) return;
     aviso(''); $('usrNC').disabled = true;
-    const j = await llamar('usr_crear', {usuario: u, nombre: n, rol: r, ficha, formularios: r === 'Consulta' ? 'todos' : valorForms(mods)});
+    const j = await llamar('usr_crear', {usuario: u, nombre: n, rol: r, ficha, formularios: r === 'Consulta' ? 'todos' : valorForms(mods), planificacion: r === 'Consulta' ? true : $('usrNMods').querySelector('.unp').checked});
     $('usrNC').disabled = false; if (!j) return;
     $('usrNU').value = $('usrNN').value = $('usrNF').value = ''; $('usrNMods').querySelectorAll('input').forEach(i => { i.checked = true; });
     mostrarCodigo(`Usuario creado: <b>${esc(j.usuario)}</b> (${esc(r)}). Código temporal:`, j.codigo);
@@ -146,13 +146,12 @@ function initAdminUsuarios() {
       const j = await llamar('usr_editar', {usuario: u.usuario, ficha});
       if (!j) e.target.value = u.ficha || ''; else UI.toast(ficha ? `Ficha de ${u.usuario}: ${ficha}` : `${u.usuario}: sin ficha`);
       cargar();
-    } else if (e.target.classList.contains('um')) {
-      const det = e.target.closest('details'), ids = [...det.querySelectorAll('input.um:checked')].map(i => i.value);
-      if (!ids.length) { e.target.checked = true; UI.toast('Debe quedar al menos un formulario. Para quitarlos todos, cambia el rol a Consulta.'); return; }
-      const valor = valorForms(ids), j = await llamar('usr_editar', {usuario: u.usuario, formularios: valor});
-      if (!j) { const prev = idsDe(u); det.querySelectorAll('input.um').forEach(i => { i.checked = prev.includes(i.value); }); return; }
-      u.modulos = valor === 'todos' ? 'todos' : ids.join(','); det.querySelector('summary').textContent = resumenForms(ids);   // sin redibujar la tabla: el desplegable sigue abierto
-      UI.toast(`Formularios de ${u.usuario}: ${resumenForms(ids)}`);
+    } else if (e.target.classList.contains('um') || e.target.classList.contains('up')) {
+      const det = e.target.closest('details'), ids = [...det.querySelectorAll('input.um:checked')].map(i => i.value), plan = det.querySelector('input.up').checked;
+      const valor = valorForms(ids), j = await llamar('usr_editar', {usuario: u.usuario, formularios: valor, planificacion: plan});   // se puede dejar sin ningún formulario y/o sin registro de planificación
+      if (!j) { const prev = idsDe(u); det.querySelectorAll('input.um').forEach(i => { i.checked = prev.includes(i.value); }); det.querySelector('input.up').checked = planDe(u); return; }
+      u.modulos = valor === 'todos' ? 'todos' : (ids.length ? ids.join(',') : 'ninguno'); u.planificacion = plan; det.querySelector('summary').textContent = resumenForms(ids, plan);   // sin redibujar la tabla: el desplegable sigue abierto
+      UI.toast(`Permisos de ${u.usuario}: ${resumenForms(ids, plan)}`);
     }
   });
   $('usrT').addEventListener('keydown', e => { if (e.key === 'Enter' && e.target.classList.contains('un')) { e.preventDefault(); e.target.blur(); } });

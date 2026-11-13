@@ -130,3 +130,15 @@ details.mods[open] summary{border-color:var(--amber)}
 .tipP b{display:block;color:var(--amber);font-size:14px;margin-bottom:5px}.tipP .tc{color:var(--mute);font-size:12px;margin-bottom:2px}
 .tipP .tk{display:grid;grid-template-columns:auto 1fr;gap:2px 16px}.tipP .tk span:nth-child(odd){color:var(--mute)}.tipP .tk span:nth-child(even){text-align:right;font-weight:600}
 #cfgAvz[hidden],#cfgSave[hidden]{display:none!important}
+.modsl .planl{border-top:1px solid var(--line);margin-top:6px;padding-top:6px;color:var(--amber)}
+/* ajustes personales de los números de hectáreas (Mi cuenta) */
+.etqCfg{margin:10px 0;padding:10px;border:1px solid var(--line);border-radius:8px;background:rgba(255,255,255,.03)}
+.etqH{font-weight:600;font-size:13.5px;margin-bottom:6px}.etqS{font-weight:400;color:var(--mute);font-size:12px}
+.etqRow{display:flex;align-items:center;gap:10px;margin:6px 0;font-size:13px}.etqRow>label{min-width:52px;margin:0;color:var(--mute)}
+.etqRow input[type=range]{flex:1;margin:0;accent-color:var(--amber)}.etqRow output{min-width:44px;text-align:right;font-variant-numeric:tabular-nums}
+.etqSw{display:flex;gap:6px;flex:1;flex-wrap:wrap}.etqSw .sw{width:24px;height:24px;min-width:24px;padding:0;border-radius:50%;border:2px solid var(--line)}
+.etqSw .sw.on{border-color:var(--amber);box-shadow:0 0 0 2px rgba(242,177,52,.35)}
+.etqRow input[type=color]{width:34px;height:28px;padding:0;border:1px solid var(--line);border-radius:6px;background:none}
+.etqPrev{display:flex;align-items:center;gap:10px;margin:8px 0 4px;padding:8px 10px;border-radius:6px;background:#2f4a33}
+.etqPrev #etqPrevN{font-weight:500;text-shadow:0 0 3px rgba(0,0,0,.75),0 0 2px rgba(0,0,0,.75);min-width:60px}.etqPrev .etqAy{flex:1;color:#9fb3a4;font-size:11.5px}
+.etqAy2{font-size:11.5px;color:var(--mute);margin-top:4px}

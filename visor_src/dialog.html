@@ -36,6 +36,14 @@
   <div id="cfgVer" style="font-size:12.5px;color:var(--mute);margin:8px 0"></div>
   <div id="cfgProg" style="font-size:12.5px;color:var(--mute);margin:4px 0"></div>
   <div id="cfgQ" style="font-size:12.5px;color:var(--mute)"></div>
+  <div class="etqCfg">
+    <div class="etqH">Números de hectáreas en el mapa <span class="etqS">(solo para ti)</span></div>
+    <div class="etqRow"><label for="etqTam">Tamaño</label><input id="etqTam" type="range" min="50" max="200" step="10"><output id="etqTamV">100 %</output></div>
+    <div class="etqRow"><label>Color</label><span id="etqSw" class="etqSw"></span><input id="etqCol" type="color" aria-label="Elegir otro color"></div>
+    <div class="etqPrev"><span id="etqPrevN">12.34</span><span class="etqAy">Vista previa</span><button id="etqRst" type="button">Restablecer</button></div>
+    <div class="pstate" style="font-size:12px;color:var(--mute)"></div>
+    <div class="etqAy2">El plantío seleccionado siempre se resalta en amarillo. Se guarda en tu perfil y se aplica en todos tus equipos.</div>
+  </div>
   <details id="cfgAvz" hidden><summary>Avanzado (conexiones)</summary>
     <label>URL del Web App de Google Apps Script<input id="cfgUrl" type="url" placeholder="https://script.google.com/macros/s/…/exec"></label>
     <label>URL de datos en GitHub (carpeta data/)<input id="cfgData" type="url" placeholder="https://raw.githubusercontent.com/usuario/repo/main/data/"></label>
@@ -94,13 +102,13 @@
       <button id="usrNC" type="button" class="primary">Crear usuario</button>
     </div>
     <div class="usrnew2"><label id="usrNFL">Ficha<input id="usrNF" type="text" inputmode="numeric" maxlength="8" autocomplete="off" placeholder="ej. 8247"></label>
-      <div><span class="lbl">Formularios que podrá usar</span><div class="chipsf" id="usrNMods"></div></div></div>
+      <div><span class="lbl">Formularios y registro de planificación que podrá usar</span><div class="chipsf" id="usrNMods"></div></div></div>
     <div id="usrNM" class="admsub" role="alert"></div>
   </div>
 
   <div class="admstep">
     <div class="admrow"><b>Usuarios</b><input id="usrQ" type="search" placeholder="Buscar por usuario, nombre o rol" autocomplete="off" aria-label="Buscar usuario" style="max-width:300px"><span id="usrCnt" class="admsub"></span></div>
-    <div class="usrwrap"><table class="admt usr"><thead><tr><th>Usuario</th><th>Nombre</th><th>Rol</th><th>Ficha</th><th>Formularios</th><th>Estado</th><th>Último ingreso</th><th></th></tr></thead><tbody id="usrT"></tbody></table></div>
+    <div class="usrwrap"><table class="admt usr"><thead><tr><th>Usuario</th><th>Nombre</th><th>Rol</th><th>Ficha</th><th>Formularios y planificación</th><th>Estado</th><th>Último ingreso</th><th></th></tr></thead><tbody id="usrT"></tbody></table></div>
   </div>
 
   <details id="usrPerm"><summary>Permisos por rol</summary><div id="usrPermT" class="usrwrap"></div></details>

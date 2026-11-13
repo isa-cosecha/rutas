@@ -40,6 +40,7 @@ main{position:relative} #map{height:100%}
 #tools{position:absolute;z-index:600;left:10px;top:92px;display:grid;gap:6px;justify-items:start}
 #tools button{display:flex;align-items:center;gap:6px;background:rgba(29,43,34,.96);border:1px solid var(--line);border-radius:6px;padding:7px 11px;font:600 13px var(--f-head);color:var(--ink);box-shadow:0 1px 5px rgba(0,0,0,.45)}
 #tools button[aria-expanded=true]{border-color:var(--amber)}
+#tools button[hidden]{display:none}   /* si no, display:flex anula el atributo hidden y el botón de Formularios se vería aunque el usuario no tenga ninguno */
 #tools #tSide{width:36px;justify-content:center;font-size:19px;padding:3px 0;line-height:1.2}
 #capPanel{position:absolute;z-index:700;left:62px;top:92px;width:340px;max-height:calc(100% - 108px);overflow:auto;background:rgba(29,43,34,.97);border:1px solid var(--line);border-radius:8px;padding:12px 14px;box-shadow:0 4px 18px rgba(0,0,0,.5)}
 #capPanel[hidden]{display:none}
@@ -121,8 +122,8 @@ function renderList(fl){
   $('list').innerHTML=nota+fl.map(o=>`<div class="it${cur&&cur.id===o.id?' on':''}" data-id="${o.id}" role="option" tabindex="0"><span class="c">${o.id}</span><span class="n">${A.esc(o.nm)}</span>
    <span class="tag ${o.src==='26-27'?'t27':o.src?'t26':'tno'}">${o.src||'—'}</span><span class="m">${o.fc||''} · ${A.esc(o.fr||'')} S${o.sem??''}-${o.sec??''} · TCH ${A.fmt(o.tch,0)} · ${A.fmt(o.dP,0)} km</span><span class="v">${A.valTag(A.valOf(o.id))}</span></div>`).join('');
   const n=fl.length,a=fl.filter(o=>o.src==='26-27').length,v=fl.filter(o=>A.valOf(o.id)).length;
-  $('stats').innerHTML=`<span><b>${n}</b> plantíos</span><span><b>${a}</b> mapeo 26-27</span><span><b>${v}</b> validados</span><button id="bCsv" title="Descargar lo filtrado">Descargar CSV</button>`;
-  $('bCsv').onclick=A.csv;
+  $('stats').innerHTML=`<span><b>${n}</b> plantíos</span><span><b>${a}</b> mapeo 26-27</span><span><b>${v}</b> validados</span>${A.auth.puedeCsv()?'<button id="bCsv" title="Descargar lo filtrado">Descargar CSV</button>':''}`;
+  if($('bCsv')) $('bCsv').onclick=A.csv;   // el rol Consulta no ve el botón
 }
 function card(o){
   const c=$('card');

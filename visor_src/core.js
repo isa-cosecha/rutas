@@ -312,9 +312,12 @@ App = (() => {
   // El plantío seleccionado resalta (amarillo, negrita, grande); los demás son discretos: pequeños, delgados y translúcidos.
   // Los vecinos además se achican y se vuelven más translúcidos cuanto más lejos está el mapa (con la escala de 500 m son diminutos y tenues).
   const estiloEtq = (sel, z) => {
-    if (sel) return {fs: 12.5, peso: 700, relleno: '#ffe14d', halo: 'rgba(8,18,12,.88)', ancho: 3.4};
+    const k = aj.etqTam / 100, tam = fs => +Math.max(4, Math.min(30, fs * k)).toFixed(1);   // tamaño personal (50-200 %)
+    if (sel) return {fs: tam(12.5), peso: 700, relleno: '#ffe14d', halo: 'rgba(8,18,12,.88)', ancho: 3.4};   // el seleccionado siempre se resalta en amarillo
     const t = Math.max(0, Math.min(1, (z - 13) / 4)), L_ = (a, b) => a + (b - a) * t, m = esMovil();   // t: 0 con zoom ≤ 13, 1 con zoom ≥ 17
-    return {fs: +L_(m ? 5.5 : 6.5, m ? 8.5 : 9.5).toFixed(1), peso: 500, relleno: `rgba(255,255,255,${L_(.4, .7).toFixed(2)})`, halo: `rgba(8,18,12,${L_(.26, .5).toFixed(2)})`, ancho: +L_(1.5, 2.2).toFixed(1)};
+    const r = parseInt(aj.etqColor.slice(1, 3), 16), g = parseInt(aj.etqColor.slice(3, 5), 16), bl = parseInt(aj.etqColor.slice(5, 7), 16), claro = (.299 * r + .587 * g + .114 * bl) / 255 > .5;
+    const halo = claro ? `rgba(8,18,12,${L_(.26, .5).toFixed(2)})` : `rgba(255,255,255,${L_(.4, .65).toFixed(2)})`;   // el borde contrasta con el color elegido
+    return {fs: tam(L_(m ? 5.5 : 6.5, m ? 8.5 : 9.5)), peso: 500, relleno: `rgba(${r},${g},${bl},${L_(.4, .7).toFixed(2)})`, halo, ancho: +(L_(1.5, 2.2) * Math.max(.7, Math.min(1.6, k))).toFixed(1)};
   };
   function dibujarEtiquetas() {
     ETQ.raf = 0; const cv = ETQ.cv; if (!cv || !map) return;
@@ -413,7 +416,10 @@ App = (() => {
   const options = k => [...new Set(D.map(o => o[k]).filter(v => v != null && v !== ''))].sort((a, b) => a > b ? 1 : -1);
 
   // ---------- CSV ----------
+  // CSV: no lo descarga el rol Consulta. (Con un servidor anterior, que aún no manda el permiso 'csv', todo rol distinto de Consulta lo conserva.)
+  const puedeCsv = () => logged() && (puede('csv') || sess.rol !== 'Consulta');
   function csv() {
+    if (!puedeCsv()) { emit('toast', 'Tu rol es de consulta: no puede descargar el CSV.'); return; }
     const CSVCAP = CAPS.filter(c => ['postes', 'valvulas', 'obstaculos', 'pozos'].includes(c.id));
     const H = ['Código','Nombre','Frente','Semana','Secuencia','Fecha corte','Variedad','N. cortes','Ha','Toneladas','TCH','Región','Tenencia','Municipio','Tipo de corte',
       'Carretas','Ubicación','Mulero','Mapeo usado','Km ingenio-lote (entrada)','Km ingenio-lote (salida)','Km ingenio-lote (promedio)','Dist Km (programa)',
@@ -438,7 +444,7 @@ App = (() => {
   if (sess && !(sess.token && sess.exp > Date.now())) sess = null;
   const logged = () => !!(sess && sess.token && sess.exp > Date.now());
   // Permisos que envía el servidor al entrar y en cada sincronización. Respaldo para sesiones guardadas antes de existir esta lista.
-  const PERMISOS_POR_ROL = {Administrador: ['ver', 'responder', 'capas_admin', 'usuarios_admin'], Supervisor: ['ver', 'responder'], Consulta: ['ver']};
+  const PERMISOS_POR_ROL = {Administrador: ['ver', 'csv', 'responder', 'capas_admin', 'usuarios_admin'], Supervisor: ['ver', 'csv', 'responder'], 'Administrador de frente': ['ver', 'csv', 'responder'], Consulta: ['ver']};
   const puede = p => logged() && (sess.permisos || PERMISOS_POR_ROL[sess.rol] || ['ver']).includes(p);   // la pantalla solo oculta botones; el servidor decide siempre
   const setSess = x => { sess = x; LS.set('sess', x); };
   async function api(action, body = {}, authed = true) {
@@ -455,6 +461,9 @@ App = (() => {
 
   // ---------- capas del mapa: configuración personal del usuario ----------
   const PREF_KEYS = Object.keys(vis);
+  // Ajustes personales de los números de hectáreas: tamaño (50-200 %) y color. Se guardan en el perfil del usuario junto con sus capas.
+  const aj = {etqTam: 100, etqColor: '#ffffff'};
+  const ajValido = p => ({etqTam: Number.isFinite(+p.etqTam) && +p.etqTam >= 50 && +p.etqTam <= 200 ? Math.round(+p.etqTam) : 100, etqColor: /^#[0-9a-f]{6}$/i.test(String(p.etqColor || '')) ? String(p.etqColor).toLowerCase() : '#ffffff'});
   const pkey = k => 'u_' + (sess ? sess.user : '_') + '_' + k;
   let prefsDirty = false, prefTimer = null;
   const PSTATE = {ok: 'Tu vista se guarda en tu perfil y aplica a todos los plantíos.', pend: 'Guardando tu vista…',
@@ -462,28 +471,31 @@ App = (() => {
   const setPState = st => { document.querySelectorAll('.pstate').forEach(el => { el.dataset.s = st; el.textContent = PSTATE[st]; }); };
   const syncChecks = () => document.querySelectorAll('input[data-v]').forEach(i => { i.checked = !!vis[i.dataset.v]; });
   function loadPrefsLocal() {
-    const p = LS.get(pkey('prefs'), null); if (p) PREF_KEYS.forEach(k => { if (k in p) vis[k] = !!p[k]; });
+    const p = LS.get(pkey('prefs'), null); if (p) { PREF_KEYS.forEach(k => { if (k in p) vis[k] = !!p[k]; }); Object.assign(aj, ajValido({...aj, ...p})); }
     prefsDirty = LS.get(pkey('dirty'), false);
   }
   loadPrefsLocal();
   function applyPrefs(p) {
     if (!p || prefsDirty) return;                       // si hay cambios locales sin enviar, no se pisan
     PREF_KEYS.forEach(k => { if (k in p) vis[k] = !!p[k]; });
-    LS.set(pkey('prefs'), {...vis}); syncChecks(); redibujar(); emit('prefs');
+    if ('etqTam' in p || 'etqColor' in p) Object.assign(aj, ajValido({...aj, ...p}));
+    LS.set(pkey('prefs'), {...vis, ...aj}); syncChecks(); redibujar(); emit('prefs');
   }
   async function savePrefs() {
     if (!logged()) return;
-    const snap = JSON.stringify(vis);
+    const snap = JSON.stringify([vis, aj]);
     try {
-      const j = await api('prefs_set', {prefs: {...vis}});
-      if (j.ok) { if (JSON.stringify(vis) === snap) { prefsDirty = false; LS.set(pkey('dirty'), false); setPState('ok'); } }
+      const j = await api('prefs_set', {prefs: {...vis, ...aj}});
+      if (j.ok) { if (JSON.stringify([vis, aj]) === snap) { prefsDirty = false; LS.set(pkey('dirty'), false); setPState('ok'); } }
       else if (j.code !== 'sesion') setPState('err');
     } catch { setPState('off'); }
   }
   function prefsChanged() {
-    LS.set(pkey('prefs'), {...vis}); prefsDirty = true; LS.set(pkey('dirty'), true);
+    LS.set(pkey('prefs'), {...vis, ...aj}); prefsDirty = true; LS.set(pkey('dirty'), true);
     setPState('pend'); clearTimeout(prefTimer); prefTimer = setTimeout(savePrefs, 1200);
   }
+  /** Cambia el tamaño (%) y/o el color de los números de hectáreas de ESTE usuario; se aplica al instante y se guarda en su perfil. */
+  function setEtq(x) { Object.assign(aj, ajValido({...aj, ...x})); prefsChanged(); pedirEtiquetas(); emit('prefs'); }
   const PRESETS = {rutas: ['lE', 'lS'], operativa: ['lE', 'lS', 'lME', 'lMS', 'lAV', 'pR', 'lblHa', 'xpostes', 'xvalvulas', 'xobstaculos', 'xpozos'], todo: PREF_KEYS.filter(k => k !== 'ref' && k !== 'xall')};
   function applyPreset(n) { const on = new Set(PRESETS[n] || []); PREF_KEYS.forEach(k => { if (k !== 'ref' && k !== 'xall') vis[k] = on.has(k); }); }
 
@@ -546,7 +558,7 @@ App = (() => {
   }
   function submit(o, resultado, aspectos, nota, fechaReal, withPos) {
     if (!logged()) { emit('needLogin'); return false; }
-    if (!puede('responder')) { emit('toast', 'Tu rol es de consulta: no puede registrar respuestas.'); return false; }
+    if (!puede('responder')) { emit('toast', sess.rol === 'Consulta' ? 'Tu rol es de consulta: no puede registrar respuestas.' : 'El registro de la planificación está deshabilitado para tu usuario.'); return false; }
     if (resultado === 'Diferente' && nota.trim().length < 5) { emit('toast', 'Agrega la nota de por qué se trabajó diferente.'); return false; }
     const p = withPos && lastPos ? lastPos : null;
     queue.push({id: uuid(), ts: new Date().toISOString(), codigo: o.id, nombre: o.nm, frente: o.fr, semana: o.sem, secuencia: o.sec, fecha_plan: o.fc,
@@ -650,7 +662,7 @@ App = (() => {
   }
   function htmlForm(o) {
     const v = valOf(o.id), today = new Date().toISOString().slice(0, 10);
-    if (sess && !puede('responder')) return `<div class="vlast">${v ? `${valTag(v)} ${esc(v.u || '')} ${v.t ? esc(String(v.t).slice(0, 16).replace('T', ' ')) : ''}${v.n ? `<div class="vnote">“${esc(v.n)}”</div>` : ''}` : 'Sin respuesta registrada.'}</div><div class="ok">Tu rol es de consulta: puedes ver rutas y estados, pero no registrar respuestas.</div>`;
+    if (sess && !puede('responder')) return `<div class="vlast">${v ? `${valTag(v)} ${esc(v.u || '')} ${v.t ? esc(String(v.t).slice(0, 16).replace('T', ' ')) : ''}${v.n ? `<div class="vnote">“${esc(v.n)}”</div>` : ''}` : 'Sin respuesta registrada.'}</div><div class="ok">${sess.rol === 'Consulta' ? 'Tu rol es de consulta: puedes ver rutas y estados, pero no registrar respuestas.' : 'El registro de la planificación está deshabilitado para tu usuario: puedes ver rutas y estados.'}</div>`;
     return `<div class="vform">
       ${v ? `<div class="vlast">${valTag(v)} ${esc(v.u || '')} ${v.t ? esc(String(v.t).slice(0, 16).replace('T', ' ')) : ''}${v.n ? `<div class="vnote">“${esc(v.n)}”</div>` : ''}</div>` : ''}
       <div class="vbtns"><button type="button" class="vb vok" data-r="Según lo planificado">Se trabajó según lo planificado</button>
@@ -681,9 +693,10 @@ App = (() => {
   }
 
   return {META: META || {}, D, byId, F, CAT, PCAT, FLAGS, vis, cfg, esc, fmt, init: initMap, select, step, fitLocal, fitAll, applyFilters, options, csv, flush, refreshStatus,
-    saveCfg, locate, on, savePrefs, hasFilters, clearFilters, CAPS, capasCerca, setCapas, cercaCapa, _t: {fraccionSobre, distPlantio, capaBBox, reglaSobre, tipPlantio, get etiquetas() { return ETQ.ultimo; }, dibujarEtiquetas}, valOf, valTag, srcTag, htmlKpis, htmlDetail, htmlPanelCapas, bindCapas, htmlForm, bind, kmFlag,
+    saveCfg, locate, on, savePrefs, hasFilters, clearFilters, CAPS, capasCerca, setCapas, cercaCapa, _t: {fraccionSobre, distPlantio, capaBBox, reglaSobre, tipPlantio, submit, get etiquetas() { return ETQ.ultimo; }, dibujarEtiquetas}, valOf, valTag, srcTag, htmlKpis, htmlDetail, htmlPanelCapas, bindCapas, htmlForm, bind, kmFlag,
     cargarPrograma, get programa() { return PROG; }, get programaDoc() { return PROG_DOC; },
-    auth: {logged, login, logout, changePassword, get sess() { return sess; }, puede, canSubmit: () => puede('responder')},
+    get etqPref() { return {...aj}; }, setEtq,
+    auth: {logged, login, logout, changePassword, get sess() { return sess; }, puede, puedeCsv, canSubmit: () => puede('responder')},
     api: (accion, datos) => api(accion, datos || {}, true),
     get filtered() { return filtered; }, get cur() { return cur; }, get queueLen() { return queue.length; }, get map() { return map; }};
 })();

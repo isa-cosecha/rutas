@@ -140,3 +140,10 @@ En **Mi cuenta**, la sección *Avanzado (conexiones)* (URL del Web App de Apps S
 ## Etiquetas de hectáreas según el zoom
 
 Las de los vecinos se achican y se vuelven más translúcidas cuanto más lejos está el mapa: en celular de 8.5 px / 0.70 de opacidad (zoom 17 o más) a 5.5 px / 0.40 (zoom 13 o menos); en computadora de 9.5 px a 6.5 px. Con la escala de 500 m (zoom 14) miden ~6.3 px y 0.49. El plantío seleccionado conserva 12.5 px, negrita y amarillo a cualquier zoom. Ajustes en `estiloEtq` de `core.js`.
+
+## Permisos finos por usuario (v9)
+
+- **CSV:** permiso `csv` (Administrador, Supervisor, Administrador de frente). El rol Consulta no ve el botón; la función `csv()` también lo comprueba. Con un servidor anterior, que aún no manda ese permiso, todo rol distinto de Consulta conserva el CSV.
+- **Planificación por usuario:** columna *Planificación* de la hoja `Usuarios` (`Sí`/`No`, vacía = `Sí`). Con `No` el servidor quita el permiso `responder` a ese usuario (rechaza el registro con "deshabilitado para tu usuario") y la ficha no muestra los botones de respuesta.
+- **Formularios por usuario:** la columna *Formularios* acepta `todos`, `ninguno` o una lista. Con `ninguno` no se dibuja el botón de Formularios y el servidor niega catálogos y envíos. Las casillas por usuario solo **quitan** permisos del rol; nunca agregan.
+- **Hectáreas, tamaño y color por usuario:** `Mi cuenta` → deslizador 50–200 % y color; se guardan en las columnas *Tamaño de las hectáreas (%)* y *Color de las hectáreas* de la hoja `Configuración`. El plantío seleccionado conserva el amarillo.

@@ -102,19 +102,19 @@ const row=o=>`<div class="it" data-id="${o.id}" role="option"><span class="c">${
 function renderList(fl){
   const fuera=A.cur&&A.hasFilters()&&!fl.some(o=>o.id===A.cur.id);
   const nota=fuera?`<div class="fnote">Estás viendo <b>${A.cur.id}</b>, que no está en el filtro actual. <button type="button" id="fnClr">Quitar filtros</button></div>`:'';
-  $('plist').innerHTML=nota+fl.slice(0,400).map(row).join('')+(fl.length>400?`<div style="padding:12px;color:var(--mute)">Mostrando 400 de ${fl.length}. Ajusta los filtros o usa el CSV.</div>`:'');
+  $('plist').innerHTML=nota+fl.slice(0,400).map(row).join('')+(fl.length>400?`<div style="padding:12px;color:var(--mute)">Mostrando 400 de ${fl.length}. Ajusta los filtros${A.auth.puedeCsv()?' o usa el CSV':''}.</div>`:'');
   const v=fl.filter(o=>A.valOf(o.id)).length;
-  $('pst').innerHTML=`<span><b>${fl.length}</b> plantíos</span><span><b>${v}</b> validados</span>${A.hasFilters()?'<button id="bClrP" type="button">✕ Limpiar</button>':''}<button id="bCsv" class="primary">Descargar CSV</button>`;
+  $('pst').innerHTML=`<span><b>${fl.length}</b> plantíos</span><span><b>${v}</b> validados</span>${A.hasFilters()?'<button id="bClrP" type="button">✕ Limpiar</button>':''}${A.auth.puedeCsv()?'<button id="bCsv" class="primary">Descargar CSV</button>':''}`;
   const bp=$('bClrP'); if(bp) bp.onclick=()=>A.clearFilters();
   $('bClrTop').hidden=!A.hasFilters();
-  $('bCsv').onclick=A.csv;
+  if($('bCsv')) $('bCsv').onclick=A.csv;   // el rol Consulta no ve el botón
   const n=['fr','sem','src','flag','val'].filter(k=>A.F[k]).length; $('bFil').textContent=n?'☰'+n:'☰';
   if(document.activeElement===$('q')&&A.F.q) showRes(fl);
 }
 function showRes(fl){ $('res').innerHTML=fl.length?fl.slice(0,40).map(row).join(''):'<div style="padding:12px;color:var(--mute)">Sin coincidencias</div>'; $('res').style.display='block'; }
 function sheetTop(o){
   $('shTop').innerHTML=`<h2>${o.id} ${A.valTag(A.valOf(o.id))}</h2><div class="nm">${A.esc(o.nm)} ${A.srcTag(o)} <span>${o.fc||''}</span></div>${A.htmlKpis(o)}
-    <button class="more primary" id="bMore">Registrar cómo se trabajó</button>`;
+    <button class="more${A.auth.canSubmit()?' primary':''}" id="bMore">${A.auth.canSubmit()?'Registrar cómo se trabajó':'Ver detalle del plantío'}</button>`;   // sin permiso de registrar (Consulta, o planificación deshabilitada) no se ofrece registrar
   $('bMore').onclick=e=>{e.stopPropagation();open('full');};
 }
 function sheet(o,state){

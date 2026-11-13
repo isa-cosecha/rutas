@@ -50,11 +50,24 @@ UI = (() => {
 
   // ---------- cuenta ----------
   const dlg = $('cfgDlg');
+  // ---- números de hectáreas: tamaño y color personales ----
+  const COLORES = ['#ffffff', '#ffe14d', '#ffb454', '#7dd3fc', '#86efac', '#f9a8d4', '#111111'];
+  function pintarEtq() {
+    const p = A.etqPref, movil = document.documentElement.dataset.ui === 'movil';
+    $('etqTam').value = p.etqTam; $('etqTamV').textContent = p.etqTam + ' %'; $('etqCol').value = p.etqColor;
+    $('etqSw').innerHTML = COLORES.map(c => `<button type="button" class="sw${c === p.etqColor ? ' on' : ''}" data-c="${c}" style="background:${c}" aria-label="Color ${c}"></button>`).join('');
+    $('etqPrevN').style.cssText = `font-size:${((movil ? 8.5 : 9.5) * p.etqTam / 100).toFixed(1)}px;color:${p.etqColor}`;   // así se ve de cerca (zoom 17 o más)
+  }
+  $('etqTam').oninput = e => { A.setEtq({etqTam: +e.target.value}); pintarEtq(); };
+  $('etqSw').onclick = e => { const b = e.target.closest('button.sw'); if (!b) return; e.preventDefault(); A.setEtq({etqColor: b.dataset.c}); pintarEtq(); };
+  $('etqCol').oninput = e => { A.setEtq({etqColor: e.target.value}); pintarEtq(); };
+  $('etqRst').onclick = e => { e.preventDefault(); A.setEtq({etqTam: 100, etqColor: '#ffffff'}); pintarEtq(); };
   function openCfg(m) {
     const s = auth.sess;
     $('cfgMsg').textContent = m || '';
     $('cfgWho').innerHTML = s ? `Usuario: <b>${A.esc(s.nombre)}</b> (${A.esc(s.user)}) · Rol: <b>${A.esc(s.rol)}</b>` : 'Sin sesión';
     $('cfgAdm').hidden = !A.auth.puede('capas_admin'); $('cfgUsr').hidden = !A.auth.puede('usuarios_admin');
+    pintarEtq();
     // Las conexiones (URL de Apps Script, URL de datos en GitHub y token) sólo las ve y edita el Administrador de la plataforma.
     // Para los demás ni se muestran ni se cargan en los campos.
     const adm = A.auth.puede('usuarios_admin');

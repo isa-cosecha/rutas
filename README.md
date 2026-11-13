@@ -152,3 +152,11 @@ Las de los vecinos se achican y se vuelven más translúcidas cuanto más lejos 
 
 - **Editor de maestros** (`visor_src/admin_maestros.js`, servidor `accionMae*_`): solo con el permiso `maestros_admin` (Administrador). Tablas definidas en `MAESTROS_DEF` del servidor (hoja, columnas, tipo y reglas de cada una); alta, edición y baja con validación por tipo, unicidad, detección de cambios simultáneos (el cliente envía el contenido original de la fila) y registro en la hoja `Auditoría`. Cada cambio sube el contador `maestros_version`, que el servidor devuelve en `sync` y `form_maestros`; el cliente lo compara y vuelve a bajar los catálogos.
 - **Permisos en vivo** (`core.js`): consulta al servidor cada 3 minutos con la app a la vista, al volver a la ventana (máx. 1 cada 20 s) y cuando el servidor niega una acción (`code: 'permiso'`). Al cambiar el rol o los permisos avisa, redibuja la ficha y, si corresponde, cierra o cambia la pantalla de formularios. Las respuestas guardadas sin permiso no se envían ni se pierden.
+
+## Camionetas alquiladas (v11)
+
+- **Dos formularios** (`FORM.camcomb`, `FORM.camrec` en `forms.js`; `filaCamComb_`, `filaCamRec_` en el servidor) que escriben en los libros `ID_CAMCOMB` (*Consumo combustible Camionetas*) y `ID_CAMREC` (*Recorrido de Vehículos Alquilado*): 15 columnas en el orden de ODK, hora como fracción de día, supervisor como `Nombre_Apellido`, recorrido = final − inicial. Permisos `form_camcomb` y `form_camrec`; en `Usuarios`/`Altas` se escriben `camcomb` y `camrec`.
+- **Maestros:** camionetas = `Equipos` con categoría `Camionetas`; `Supervisores` es una tabla nueva (`MAESTROS_DEF.supervisores`, con `crear: true`: la hoja se crea sola). `mae_traer` copia a ambos lo que aparece en la zafra más reciente de las hojas de camionetas.
+- **Odómetros:** `odometros_()` combina las dos hojas de camionetas (el último por fecha; el mismo día gana el mayor) y se invalida al guardar cualquiera de los dos formularios.
+- **Cantidad en galones:** rótulo en `forms.js` y límites en `AVISOS` (`camGal`, `kmGal`, `odoSaltoCam`, `recorridoCam`); el rechazo del servidor (60) está en `filaCamComb_`.
+- Rótulo de *Control de combustible*: "Planta / Cisterna".

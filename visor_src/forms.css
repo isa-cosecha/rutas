@@ -21,7 +21,7 @@ button,input,select,textarea{font:inherit;color:inherit}
 .campo .ayuda{font-size:12.5px;color:var(--mute);margin-top:4px}.campo .ayuda b{color:var(--ink)}
 .fila{display:grid;grid-template-columns:1fr 1fr;gap:10px}.fila3{display:grid;grid-template-columns:1fr 1fr 1fr;gap:10px}
 @media(max-width:380px){.fila3{grid-template-columns:1fr 1fr}}
-input[type=text],input[type=number],input[type=date],input[type=password],select,textarea,.sel{width:100%;min-height:48px;padding:10px 12px;border:1.5px solid var(--line);border-radius:10px;background:#fff;font-size:16px}
+input[type=text],input[type=number],input[type=date],input[type=time],input[type=password],select,textarea,.sel{width:100%;min-height:48px;padding:10px 12px;border:1.5px solid var(--line);border-radius:10px;background:#fff;font-size:16px}
 textarea{min-height:76px;resize:vertical}
 input:focus,select:focus,textarea:focus,.sel:focus{outline:2.5px solid var(--acc,var(--v2));outline-offset:0;border-color:transparent}
 .sel{text-align:left;cursor:pointer;display:flex;justify-content:space-between;align-items:center;gap:8px}.sel .v{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}.sel .v.ph{color:#8b978f}.sel:after{content:"▾";color:var(--mute)}
@@ -91,3 +91,9 @@ input[type=range]{width:100%;height:34px;accent-color:var(--acc,var(--v))}
 :host([data-modo=web]) #toast{bottom:28px}
 @media (max-width:1180px){:host([data-modo=web]) .cuerpo>form{grid-template-columns:repeat(2,minmax(0,1fr))}}
 @media (max-width:980px){:host([data-modo=web]) #app{grid-template-columns:200px minmax(0,1fr)}:host([data-modo=web]) .sinos{grid-template-columns:1fr}}
+/* con 6 formularios + Pendientes la barra inferior del celular se desplaza de lado (cada botón con un ancho mínimo legible) */
+#tabs{overflow-x:auto;scrollbar-width:none;-webkit-overflow-scrolling:touch}#tabs::-webkit-scrollbar{display:none}
+#tabs button{flex:1 0 auto;min-width:76px;padding-left:6px;padding-right:6px;white-space:nowrap}
+:host([data-modo=web]) #tabs button{min-width:0;flex:none;white-space:normal}
+#ccAv:empty,#crAv:empty{display:none}
+:host([data-modo=web]) #ccAv,:host([data-modo=web]) #crAv{grid-column:1/-1}

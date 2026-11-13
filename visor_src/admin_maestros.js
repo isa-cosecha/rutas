@@ -52,7 +52,8 @@ function initAdminMaestros() {
   }
   function pintarTabs() {
     $('mstTabs').innerHTML = datos.orden.map(k => { const t = datos.tablas[k], aten = k === 'ats_admin' && datos.faltanAts.length;
-      return `<button type="button" role="tab" data-t="${k}" class="${k === tabla ? 'on' : ''}" aria-selected="${k === tabla}">${esc(t.titulo)} <small>${t.ok ? t.filas.length : '!'}</small>${aten ? '<span class="mw" title="Faltan fichas">⚠</span>' : ''}</button>`; }).join('');
+      const tr = datos.traer || {equipos: [], supervisores: []}, falta = (k === 'equipos' && tr.equipos.length) || (k === 'supervisores' && tr.supervisores.length);
+      return `<button type="button" role="tab" data-t="${k}" class="${k === tabla ? 'on' : ''}" aria-selected="${k === tabla}">${esc(t.titulo)} <small>${t.ok ? t.filas.length : '!'}</small>${aten ? '<span class="mw" title="Faltan fichas">⚠</span>' : ''}${falta ? '<span class="mw" title="Hay camionetas o supervisores en las hojas que aún no están aquí">⚠</span>' : ''}</button>`; }).join('');
   }
   // un control por tipo de dato (el servidor vuelve a validar todo)
   function control(c, v, id) {
@@ -68,6 +69,9 @@ function initAdminMaestros() {
     const falta = datos.faltanAts.length, mostrarAts = (tabla === 'administradores' || tabla === 'ats_admin') && falta > 0;
     $('mstAts').hidden = !mostrarAts; $('mstAts').textContent = `Completar el ATS (${falta} ficha${falta === 1 ? '' : 's'} faltan)`;
     $('mstAts').title = mostrarAts ? 'Faltan en la hoja del ATS: ' + datos.faltanAts.map(x => x.id + ' ' + x.texto).join(', ') : '';
+    const tr = datos.traer || {equipos: [], supervisores: []}, nTr = tr.equipos.length + tr.supervisores.length, mostrarTr = (tabla === 'equipos' || tabla === 'supervisores') && nTr > 0;
+    $('mstTraer').hidden = !mostrarTr; $('mstTraer').textContent = `Traer de las hojas de camionetas (${tr.equipos.length} camioneta${tr.equipos.length === 1 ? '' : 's'}, ${tr.supervisores.length} supervisor${tr.supervisores.length === 1 ? '' : 'es'})`;
+    $('mstTraer').title = mostrarTr ? `De la zafra ${tr.zafra}: ${tr.equipos.join(', ') || '—'} · ${tr.supervisores.join(', ') || '—'}` : '';
     if (!t.ok) { $('mstH').innerHTML = ''; $('mstT').innerHTML = `<tr><td style="color:var(--amber);padding:10px">${esc(t.error || 'Esta tabla no está disponible.')}</td></tr>`; $('mstCnt').textContent = ''; return; }
     $('mstH').innerHTML = `<tr>${t.cols.map(c => `<th>${esc(c.t)}${c.opc ? ' <span class="admsub" style="margin:0">(opcional)</span>' : ''}</th>`).join('')}<th>Fila</th><th></th></tr>`;
     const filas = t.filas.filter(r => !q || r.v.join(' ').toLowerCase().includes(q));
@@ -94,6 +98,11 @@ function initAdminMaestros() {
       aviso(''); const j = await llamar('mae_eliminar', {tabla, fila: +tr.dataset.f, antes}); if (j) { UI.toast(`${t.titulo}: eliminado`); aviso('Eliminado ✓', true); await cargar(tr.dataset.antes); }
     }
   });
+  $('mstTraer').onclick = async e => {   // trae de las hojas de camionetas (zafra más reciente) lo que aún no está en los maestros
+    e.preventDefault(); const tr = datos.traer;
+    if (!confirm(`De las hojas de camionetas (zafra ${tr.zafra}) se agregarán a los maestros:\n\nCamionetas (Equipos): ${tr.equipos.join(', ') || '—'}\nSupervisores: ${tr.supervisores.join(', ') || '—'}\n\nDespués puedes corregir o quitar lo que no corresponda.`)) return;
+    const j = await llamar('mae_traer', {}); if (j) { UI.toast(`Se agregaron ${j.equipos} camioneta(s) y ${j.supervisores} supervisor(es)`); aviso(`Listo: ${j.equipos} camioneta(s) y ${j.supervisores} supervisor(es) agregados ✓`, true); await cargar(); }
+  };
   $('mstAts').onclick = async e => {
     e.preventDefault(); const n = datos.faltanAts.length;
     if (!confirm(`Se agregarán a la hoja "Administrador" del ATS ${n} ficha(s) que están en Administradores y aún no están ahí:\n\n${datos.faltanAts.map(x => x.id + ' ' + x.texto).join('\n')}`)) return;

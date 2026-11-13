@@ -8,12 +8,16 @@ const A = App; let ROOT = null, HOST = null;
 const me = () => A.auth.sess || {};
 const APP_VERSION = '3.0.0';
 // Avisos "valor inusual" (el usuario puede confirmar). Salen de los percentiles 1 y 99 del histórico real, con margen.
-const AVISOS = {litrosPlanta: [0.5, 10], litrosMoto: [1, 20], recorridoMax: 300, hrs: [5, 250], tm: [20, 6000], ltHr: [10, 450], ltTm: [0.1, 120], tmHrsMotor: [0, 400], odoSalto: 400};
+const AVISOS = {litrosPlanta: [0.5, 10], litrosMoto: [1, 20], recorridoMax: 300, hrs: [5, 250], tm: [20, 6000], ltHr: [10, 450], ltTm: [0.1, 120], tmHrsMotor: [0, 400], odoSalto: 400,
+  // camionetas alquiladas (percentiles de los 678 + 1,763 registros históricos): galones 5.6-19, avance entre cargas hasta ~1,360 km, 17-102 km por galón, recorridos hasta ~320 km
+  camGal: [3, 30], odoSaltoCam: 2000, kmGal: [10, 130], recorridoCam: 450};
 const MODS = {
   combustible: {titulo: 'Combustible', icono: '⛽', acc: 'var(--azul)'},
   motos: {titulo: 'Motos', icono: '🏍️', acc: 'var(--ama)'},
   admin: {titulo: 'Administradores', icono: '📊', acc: 'var(--cian)'},
-  ats: {titulo: 'ATS', icono: '🦺', acc: 'var(--verde)'}
+  ats: {titulo: 'ATS', icono: '🦺', acc: 'var(--verde)'},
+  camcomb: {titulo: 'Cam. combustible', icono: '🛻', acc: 'var(--azul)'},
+  camrec: {titulo: 'Cam. recorrido', icono: '🧭', acc: 'var(--ama)'}
 };
 
 
@@ -49,7 +53,7 @@ const MAE_FRESCO_MS = 10 * 60 * 1000;   // los catálogos guardados se considera
 function leerCacheMae() {
   if (S.mae) return true;
   const c = LS.get('mae', null); if (!c) return false;
-  S.mae = c.mae; S.odo = Object.assign({}, c.odo, S.odo); S.cfg = c.cfg; S.hoy = c.hoy; S.maeT = c.t; S.mv = c.mv; return true;
+  S.mae = c.mae; S.odo = Object.assign({}, c.odo, S.odo); S.cfg = c.cfg; S.hoy = c.hoy; S.maeT = c.t; S.mv = c.mv; if (!c.mae || !c.mae.supervisores) S.maeT = 0; return true;   // sin la lista de supervisores = catálogo de una versión anterior: se refresca ya
 }
 /** Un odómetro guardado en este teléfono y todavía sin enviar manda sobre lo que diga el servidor (que aún no lo conoce). */
 function mezclarOdo(servidor) {
@@ -112,7 +116,7 @@ async function sincronizar() {
       let enviados = 0, odoNuevo = false;
       j.resultados.forEach(r => {
         const it = S.cola.find(x => x.id === r.id); if (!it) return;
-        if (r.ok) { S.cola = S.cola.filter(x => x.id !== r.id); enviados++; if (it.modulo === 'motos' || it.modulo === 'combustible') odoNuevo = true; if (!r.duplicado || !S.hist.some(h => h.id === r.id)) { S.hist.unshift({id: r.id, t: new Date().toISOString(), modulo: it.modulo, resumen: resumen(it.modulo, it.datos), fila: r.fila || null, uid: it.uid}); S.hist = S.hist.slice(0, 40); LS.set('hist', S.hist); } }
+        if (r.ok) { S.cola = S.cola.filter(x => x.id !== r.id); enviados++; if (it.modulo === 'motos' || it.modulo === 'combustible' || it.modulo === 'camcomb' || it.modulo === 'camrec') odoNuevo = true; if (!r.duplicado || !S.hist.some(h => h.id === r.id)) { S.hist.unshift({id: r.id, t: new Date().toISOString(), modulo: it.modulo, resumen: resumen(it.modulo, it.datos), fila: r.fila || null, uid: it.uid}); S.hist = S.hist.slice(0, 40); LS.set('hist', S.hist); } }
         else if (r.codigo === 'repetido') { it.estado = 'repetido'; it.error = r.error; }
         else { it.estado = 'error'; it.error = r.error; it.codigo = r.codigo; }
       });
@@ -127,6 +131,8 @@ function resumen(m, d) {
   const f = d.fecha ? d.fecha.slice(8) + '/' + d.fecha.slice(5, 7) : '';
   if (m === 'combustible') return `${f} ${d.turno} · ${d.tipo === 'moto' ? d.motor + ' (moto)' : d.cisterna + ' → ' + d.motor} · ${d.litros} L`;
   if (m === 'motos') return `${f} ${d.turno} · ${d.equipo} · ${d.odo_i} → ${d.odo_f} (${fmt(d.odo_f - d.odo_i)} km)`;
+  if (m === 'camcomb') return `${f} ${d.turno} · ${d.equipo} · ${d.cantidad} gal · ${d.odometro} km`;
+  if (m === 'camrec') return `${f} ${d.turno} · ${d.equipo} · ${d.odo_i} → ${d.odo_f} (${fmt(d.odo_f - d.odo_i)} km)`;
   if (m === 'admin') { const a = S.mae && S.mae.administradores.find(x => x.id === Number(d.administrador)); return `${f} · ${d.frente} · semana ${d.semana} · ${a ? a.text : d.administrador}`; }
   return `${f} ${d.turno} · ${d.frente} · plantío ${String(d.plantio).padStart(5, '0')}`;
 }
@@ -186,7 +192,7 @@ const libreNombre = t => t.length >= 2 ? {valor: t, texto: t, aviso: 'no está e
 /* ---------------------------------------------------------------- COMBUSTIBLE */
 FORM.combustible = {
   html: () => `<div class="card" style="--acc:var(--azul)"><h2>⛽ Control de combustible</h2><div class="cuerpo"><form id="f-combustible" onsubmit="return false">
-    ${campo('¿Qué se abasteció?', segHTML('tipo', [['planta', 'Planta / torre de luz'], ['moto', 'Moto']]), '', '', 'full')}
+    ${campo('¿Qué se abasteció?', segHTML('tipo', [['planta', 'Planta / Cisterna'], ['moto', 'Moto']]), '', '', 'full')}
     ${cabeceraComun()}
     <div id="cbPlanta"><div class="fila">${campo('Cisterna', '<select name="cisterna"></select>')}${campo('Planta / motor', '<select name="motorPlanta"></select>')}</div>${campo('Conductor de la cisterna', selHTML('condCis', 'Buscar por ficha o nombre'))}</div>
     <div id="cbMoto" hidden>${campo('Moto', '<select name="motorMoto"></select>')}${campo('Quién la abasteció', selHTML('condMoto', 'Buscar por ficha o nombre'))}${campo('Abastecida desde', '<select name="origen"></select>', 'Normalmente la misma moto; cámbialo si la cargó otra unidad.')}</div>
@@ -277,6 +283,105 @@ FORM.motos = {
     const u = S.odo[d.equipo]; if (u && Math.abs(oi - u) > 1) av.push(`El odómetro inicial (${oi}) no coincide con el último registrado de esta moto (${u}).`);
     if (av.length && !await confirmar('Revisa estos datos', av)) return;
     const itM = encolar('motos', d); guardarUlt('motos', {equipo: d.equipo}); S.odo[d.equipo] = of; S.odoLocal[d.equipo] = {v: of, id: itM.id}; toast('Guardado ✓ ' + (S.online ? 'enviando…' : 'se enviará al volver la señal')); pintarVista(true);
+  }
+};
+
+/* ---------------------------------------------------------------- CAMIONETAS ALQUILADAS (combustible y recorrido) */
+// El supervisor se elige de la lista de Maestros (por defecto, la persona que inició sesión si está en la lista) y las camionetas salen de Equipos (categoría Camionetas).
+const sinTilde = t => String(t || '').toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '').trim();
+const hhmm = d => `${pad(d.getHours())}:${pad(d.getMinutes())}`;
+const camionetas = () => (S.mae.equipos && S.mae.equipos.Camionetas) || [];
+const supervisores = () => [...(S.mae.supervisores || [])].sort((a, b) => a.localeCompare(b, 'es')).map(n => ({valor: n, texto: n}));
+function avisoCamionetas() {   // sin catálogos el formulario no puede funcionar: se le explica a la persona qué hacer
+  const f = [];
+  if (!camionetas().length) f.push('No hay camionetas cargadas.');
+  if (!supervisores().length) f.push('No hay supervisores cargados.');
+  return f.length ? `<div class="aviso">${f.join(' ')} El administrador debe cargarlas en <b>Mi cuenta → Administrar maestros</b> (Equipos con categoría Camionetas y Supervisores); el botón <i>Traer de las hojas de camionetas</i> las completa solo.</div>` : '';
+}
+function camComun(root, modulo) {   // supervisor, camioneta y último odómetro conocido (iguales en los dos formularios)
+  cab(root, modulo); zafraSel(root);
+  $('[name=equipo]', root).innerHTML = opcSelect(camionetas(), 'Camioneta');
+  bindSel(root, 'supervisor', 'Supervisor', supervisores, null, null);
+  turnoYFecha(root);
+  const yo = sinTilde(me().nombre), s = supervisores().find(x => sinTilde(x.valor) === yo) || supervisores().find(x => x.valor === ult(modulo, 'supervisor', ''));
+  if (s) selSet(root, 'supervisor', s.valor, s.texto);
+  const e = ult(modulo, 'equipo', ''); if (e && camionetas().includes(e)) $('[name=equipo]', root).value = e;
+  root.dataset.inicio = new Date().toISOString();
+}
+function ayudaOdo(root, idCampo, accion) {   // "Último registrado: N km  [Usar]"
+  const e = $('[name=equipo]', root).value, ay = $(idCampo, root); let h = $('.ayuda', ay); if (!h) { h = document.createElement('div'); h.className = 'ayuda'; ay.appendChild(h); }
+  const u = S.odo[e]; h.innerHTML = u ? `Último registrado: <b>${u}</b> km${accion ? ' <button type="button" class="btn sec peq" style="min-height:30px;font-size:12px;padding:0 8px" data-usar>Usar</button>' : ''}` : '';
+  const b = $('[data-usar]', ay); if (b) b.onclick = () => accion(u); return u;
+}
+FORM.camcomb = {
+  html: () => `<div class="card" style="--acc:var(--azul)"><h2>🛻 Combustible de camionetas alquiladas</h2><div class="cuerpo"><form id="f-camcomb" onsubmit="return false">
+    <div id="ccAv"></div>${cabeceraComun()}
+    ${campo('Hora', '<input type="time" name="hora">')}${campo('Supervisor', selHTML('supervisor', 'Buscar por nombre'))}${campo('Camioneta', '<select name="equipo"></select>')}
+    <div class="fila">${campo('Odómetro (km)', '<input type="number" name="odometro" inputmode="decimal" step="any" min="0">', '', 'ccOdoAy')}${campo('Cantidad (galones)', '<input type="number" name="cantidad" inputmode="decimal" step="any" min="0">', '', 'ccRend')}</div>
+    ${campo('Observación', '<textarea name="observacion" placeholder="Opcional"></textarea>', '', '', 'full')}
+    <button class="btn" type="submit">Guardar registro</button></form></div></div>`,
+  montar(root, datos) {
+    camComun(root, 'camcomb'); $('#ccAv', root).innerHTML = avisoCamionetas(); $('[name=hora]', root).value = hhmm(new Date());
+    const rend = () => {   // rendimiento estimado desde la última carga (orientativo)
+      const u = S.odo[$('[name=equipo]', root).value], o = parseFloat($('[name=odometro]', root).value), c = parseFloat($('[name=cantidad]', root).value), ay = $('#ccRend', root); let h = $('.ayuda', ay); if (!h) { h = document.createElement('div'); h.className = 'ayuda'; ay.appendChild(h); }
+      h.textContent = (u && o > u && c > 0) ? `Desde la última carga: ${fmt(o - u)} km · ${fmt((o - u) / c)} km por galón` : '';
+    };
+    $('[name=equipo]', root).onchange = () => { ayudaOdo(root, '#ccOdoAy'); const u = S.odo[$('[name=equipo]', root).value], o = $('[name=odometro]', root); if (u && !o.value) o.placeholder = String(u); rend(); };
+    $('[name=odometro]', root).oninput = rend; $('[name=cantidad]', root).oninput = rend; $('[name=equipo]', root).onchange();
+    if (datos) FORM.camcomb.set(root, datos);
+    $('#f-camcomb').onsubmit = e => { e.preventDefault(); FORM.camcomb.enviar(root); return false; };
+  },
+  set(root, d) { $('[name=zafra]', root).value = d.zafra; $('[name=fecha]', root).value = d.fecha; $('[name=hora]', root).value = d.hora; segSet(root, 'turno', d.turno); selSet(root, 'supervisor', d.supervisor, d.supervisor); $('[name=equipo]', root).value = d.equipo; $('[name=odometro]', root).value = d.odometro; $('[name=cantidad]', root).value = d.cantidad; $('[name=observacion]', root).value = d.observacion || ''; $('[name=equipo]', root).onchange(); if (d.inicio) root.dataset.inicio = d.inicio; },
+  async enviar(root) {
+    const g = n => $(`[name=${n}]`, root), er = [], av = [], mk = (el, bad, msg) => { marcar(el, bad); if (bad) er.push(msg); };
+    const odo = parseFloat(g('odometro').value), cant = parseFloat(g('cantidad').value), sup = selGet(root, 'supervisor');
+    const d = {zafra: g('zafra').value, fecha: g('fecha').value, hora: g('hora').value, turno: segGet(root, 'turno'), supervisor: sup.valor, equipo: g('equipo').value, odometro: odo, cantidad: cant, observacion: g('observacion').value.trim(), inicio: root.dataset.inicio};
+    mk(g('fecha'), !d.fecha, 'Falta la fecha.'); mk(g('zafra'), !d.zafra, 'Falta la zafra.'); mk(g('hora'), !/^\d{1,2}:\d{2}/.test(d.hora), 'Falta la hora.');
+    mk($('[data-sel=supervisor]', root), !d.supervisor, 'Elige el supervisor.'); mk(g('equipo'), !d.equipo, 'Elige la camioneta.');
+    mk(g('odometro'), !(odo > 0), 'Escribe el odómetro.'); mk(g('cantidad'), !(cant > 0), 'Escribe los galones.');
+    if (er.length) return listaErrores(root, er);
+    if (cant < AVISOS.camGal[0] || cant > AVISOS.camGal[1]) av.push(`${cant} galones es un valor inusual (lo normal está entre ${AVISOS.camGal[0]} y ${AVISOS.camGal[1]}).`);
+    const u = S.odo[d.equipo];
+    if (u) {
+      if (odo < u) av.push(`El odómetro (${odo}) es menor que el último registrado (${u}).`);
+      else if (odo - u > AVISOS.odoSaltoCam) av.push(`El odómetro avanzó ${fmt(odo - u)} km desde el último registro (${u}). ¿Es correcto?`);
+      else if (odo > u) { const r = (odo - u) / cant; if (r < AVISOS.kmGal[0] || r > AVISOS.kmGal[1]) av.push(`El rendimiento sería de ${fmt(r)} km por galón (lo normal está entre ${AVISOS.kmGal[0]} y ${AVISOS.kmGal[1]}).`); }
+    }
+    if (av.length && !await confirmar('Revisa estos datos', av)) return;
+    const it = encolar('camcomb', d); guardarUlt('camcomb', {equipo: d.equipo, supervisor: d.supervisor}); S.odo[d.equipo] = odo; S.odoLocal[d.equipo] = {v: odo, id: it.id};
+    toast('Guardado ✓ ' + (S.online ? 'enviando…' : 'se enviará al volver la señal')); pintarVista(true);
+  }
+};
+FORM.camrec = {
+  html: () => `<div class="card" style="--acc:var(--ama)"><h2>🧭 Recorrido de camionetas alquiladas</h2><div class="cuerpo"><form id="f-camrec" onsubmit="return false">
+    <div id="crAv"></div>${cabeceraComun()}
+    ${campo('Supervisor', selHTML('supervisor', 'Buscar por nombre'))}${campo('Camioneta', '<select name="equipo"></select>')}
+    <div class="fila">${campo('Odómetro inicial', '<input type="number" name="odo_i" inputmode="decimal" step="any" min="0">', '', 'crAy')}${campo('Odómetro final', '<input type="number" name="odo_f" inputmode="decimal" step="any" min="0">')}</div>
+    ${campo('Recorrido (km)', '<input type="text" name="rec" class="ro" readonly value="—">')}
+    ${campo('Observación', '<textarea name="observacion" placeholder="Opcional: adónde se fue o qué se encontró"></textarea>', '', '', 'full')}
+    <button class="btn" type="submit">Guardar recorrido</button></form></div></div>`,
+  montar(root, datos) {
+    camComun(root, 'camrec'); $('#crAv', root).innerHTML = avisoCamionetas();
+    const calc = () => { const i = parseFloat($('[name=odo_i]', root).value), f = parseFloat($('[name=odo_f]', root).value), r = $('[name=rec]', root); r.value = (isFinite(i) && isFinite(f)) ? (f >= i ? fmt(f - i) + ' km' : 'Revisa: final menor que inicial') : '—'; };
+    $('[name=equipo]', root).onchange = () => { const u = ayudaOdo(root, '#crAy', v => { $('[name=odo_i]', root).value = v; calc(); }), i = $('[name=odo_i]', root); if (u && (!i.value || i.dataset.auto)) { i.value = u; i.dataset.auto = '1'; } calc(); };
+    $('[name=odo_i]', root).oninput = () => { delete $('[name=odo_i]', root).dataset.auto; calc(); }; $('[name=odo_f]', root).oninput = calc; $('[name=equipo]', root).onchange();
+    if (datos) FORM.camrec.set(root, datos);
+    $('#f-camrec').onsubmit = e => { e.preventDefault(); FORM.camrec.enviar(root); return false; };
+  },
+  set(root, d) { $('[name=zafra]', root).value = d.zafra; $('[name=fecha]', root).value = d.fecha; segSet(root, 'turno', d.turno); selSet(root, 'supervisor', d.supervisor, d.supervisor); $('[name=equipo]', root).value = d.equipo; $('[name=odo_i]', root).value = d.odo_i; $('[name=odo_f]', root).value = d.odo_f; $('[name=observacion]', root).value = d.observacion || ''; $('[name=odo_f]', root).oninput(); if (d.inicio) root.dataset.inicio = d.inicio; },
+  async enviar(root) {
+    const g = n => $(`[name=${n}]`, root), er = [], av = [], mk = (el, bad, msg) => { marcar(el, bad); if (bad) er.push(msg); };
+    const oi = parseFloat(g('odo_i').value), of = parseFloat(g('odo_f').value), sup = selGet(root, 'supervisor');
+    const d = {zafra: g('zafra').value, fecha: g('fecha').value, turno: segGet(root, 'turno'), supervisor: sup.valor, equipo: g('equipo').value, odo_i: oi, odo_f: of, observacion: g('observacion').value.trim(), inicio: root.dataset.inicio};
+    mk(g('fecha'), !d.fecha, 'Falta la fecha.'); mk(g('zafra'), !d.zafra, 'Falta la zafra.'); mk($('[data-sel=supervisor]', root), !d.supervisor, 'Elige el supervisor.'); mk(g('equipo'), !d.equipo, 'Elige la camioneta.');
+    mk(g('odo_i'), !isFinite(oi) || oi < 0, 'Escribe el odómetro inicial.'); mk(g('odo_f'), !isFinite(of) || of < 0, 'Escribe el odómetro final.');
+    if (isFinite(oi) && isFinite(of) && of < oi) mk(g('odo_f'), true, 'El odómetro final no puede ser menor que el inicial.');
+    if (er.length) return listaErrores(root, er);
+    const rec = of - oi; if (rec > AVISOS.recorridoCam) av.push(`Un recorrido de ${fmt(rec)} km es muy grande (lo normal es menos de ${AVISOS.recorridoCam}).`);
+    const u = S.odo[d.equipo]; if (u && Math.abs(oi - u) > 1) av.push(`El odómetro inicial (${oi}) no coincide con el último registrado de esta camioneta (${u}).`);
+    if (av.length && !await confirmar('Revisa estos datos', av)) return;
+    const it = encolar('camrec', d); guardarUlt('camrec', {equipo: d.equipo, supervisor: d.supervisor}); S.odo[d.equipo] = of; S.odoLocal[d.equipo] = {v: of, id: it.id};
+    toast('Guardado ✓ ' + (S.online ? 'enviando…' : 'se enviará al volver la señal')); pintarVista(true);
   }
 };
 
@@ -425,6 +530,7 @@ function pintarTabs() {
   const ms = modulosPermitidos(), nav = $('#tabs'), p = pendMios().length;
   nav.innerHTML = ms.map(m => `<button data-v="${m}"><b>${MODS[m].icono}</b>${MODS[m].titulo}</button>`).join('') + `<button data-v="pendientes"><b>📤</b>Pendientes${p ? `<span class="n">${p}</span>` : ''}</button>`;
   $$('button', nav).forEach(b => { b.onclick = () => { S.vista = b.dataset.v; pintarVista(); }; b.classList.toggle('on', b.dataset.v === S.vista); });
+  const on = $('button.on', nav); if (on && nav.scrollWidth > nav.clientWidth && HOST.dataset.modo !== 'web') nav.scrollLeft = on.offsetLeft - (nav.clientWidth - on.offsetWidth) / 2;   // en el celular la barra se desplaza: la pestaña activa queda a la vista
 }
 function contadorMapa() {   // contador de pendientes en los botones del mapa (no depende de que la pantalla de formularios esté abierta)
   const p = A.auth.logged() ? pendMios().length : 0;

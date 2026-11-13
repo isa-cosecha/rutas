@@ -173,3 +173,9 @@ Las de los vecinos se achican y se vuelven más translúcidas cuanto más lejos 
 - `maestros_()` devuelve **sólo lo activo** en las listas que usan los formularios, más `inactivos` (`administradores`, `operadores`, `equipos` por categoría) y `inact` (nombres y códigos inactivos, sólo para explicar el rechazo en `enLista_` y en las validaciones de ficha). `MAESTROS_V = 13`.
 - Cliente: `adminPorId()` y `operadorPorId()` buscan también en `inactivos` para seguir mostrando nombres en registros viejos o pendientes. El editor atenúa las filas inactivas, cuenta las inactivas por pestaña y trae el filtro *Ocultar inactivos*.
 - `escribirMae_` completa con vacíos las columnas que falten, así que añadir una columna a una tabla no obliga a cambiar a quienes escriben en ella.
+
+## Capas base del mapa (cliente)
+
+- `initMap` en `core.js`: **Satélite (Esri)** (por defecto), **Google Satellite** (`mt1.google.com/vt/lyrs=s`, `maxNativeZoom` 20; se quita con `CAPA_GOOGLE = false`) y **Calles (OSM)** (`maxNativeZoom` 19), más la capa superpuesta **Nombres**. El orden de las capas lo da el selector (`autoZIndex`), por lo que Nombres queda siempre encima.
+- La última capa se guarda en `localStorage` (`rp26_base`); sin conexión (`navigator.onLine === false`) se ignora y se usa Esri.
+- El service worker solo intercepta y guarda teselas de `server.arcgisonline.com` (`HOST_TESELAS`): las de Google van directo a la red y no se almacenan.

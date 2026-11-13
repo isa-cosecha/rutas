@@ -1238,14 +1238,22 @@ App = (() => {
 
   // ---------- mapa ----------
   let map, sel, ctx, cur = null, curLocal = null, curAll = null, padFn = () => ({padding: [30, 30]}), meLayer = null;
+  const CAPA_GOOGLE = true;   // false = quita "Google Satellite" del selector de capas
   const SRC_COL = {'26-27': '#f2b134', '25-26': '#5fc4b0', null: '#e5604f'};
   function initMap(el, pad) {
     if (pad) padFn = pad;
     map = L.map(el, {preferCanvas: true, zoomControl: !L.Browser.mobile});
-    const sat = L.tileLayer('https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}', {maxZoom: 20, maxNativeZoom: 18, attribution: 'Esri World Imagery'}).addTo(map);
+    const sat = L.tileLayer('https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}', {maxZoom: 20, maxNativeZoom: 18, attribution: 'Esri World Imagery'});
     const lbl = L.tileLayer('https://server.arcgisonline.com/ArcGIS/rest/services/Reference/World_Boundaries_and_Places/MapServer/tile/{z}/{y}/{x}', {maxZoom: 20, maxNativeZoom: 18}).addTo(map);
-    const osm = L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {maxZoom: 19, attribution: '© OpenStreetMap'});
-    L.control.layers({'Satélite': sat, 'Calles (OSM)': osm}, {'Nombres': lbl}, {position: L.Browser.mobile ? 'topright' : 'bottomright'}).addTo(map);
+    const osm = L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {maxZoom: 20, maxNativeZoom: 19, attribution: '© OpenStreetMap'});   // se amplía el zoom 19 para no quedar en blanco en el 20
+    // Google Satellite (la misma fuente XYZ que en QGIS, zoom 0-20). OJO: pedir las teselas directo a mt1.google.com no es un uso contemplado en los términos de Google Maps Platform;
+    // puede dejar de funcionar. Por eso NO se guarda en la caché sin conexión y se puede quitar del selector poniendo CAPA_GOOGLE en false.
+    const goog = CAPA_GOOGLE ? L.tileLayer('https://mt1.google.com/vt/lyrs=s&x={x}&y={y}&z={z}', {maxZoom: 20, maxNativeZoom: 20, attribution: 'Imagery © Google'}) : null;
+    const bases = {'Satélite (Esri)': sat}; if (goog) bases['Google Satellite'] = goog; bases['Calles (OSM)'] = osm;
+    let guardada = null; try { guardada = localStorage.getItem('rp26_base'); } catch (e) {}
+    ((guardada && navigator.onLine !== false && bases[guardada]) || sat).addTo(map);   // la última capa elegida en este aparato; sin señal, el satélite de Esri (el único con teselas guardadas)
+    map.on('baselayerchange', e => { try { localStorage.setItem('rp26_base', e.name); } catch (err) {} });
+    L.control.layers(bases, {'Nombres': lbl}, {position: L.Browser.mobile ? 'topright' : 'bottomright'}).addTo(map);
     L.control.scale({imperial: false}).addTo(map);
     // Un solo lienzo (preferCanvas): si hubiera dos, el de arriba absorbe los clics y los lotes de abajo dejan de responder.
     ctx = L.layerGroup().addTo(map); capAll = L.layerGroup().addTo(map); sel = L.layerGroup().addTo(map);

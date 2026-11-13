@@ -455,6 +455,7 @@ App = (() => {
       const r = await fetch(cfg.url, {method: 'POST', body: JSON.stringify(payload), signal: ctl.signal});
       const j = await r.json();
       if (j && j.code === 'sesion' && authed) { setSess(null); emit('logout', j.error); }
+      if (j && j.code === 'permiso' && authed && Date.now() - ultimoSync > 5000) setTimeout(refreshStatus, 0);   // el servidor dice que ya no puedes: se actualiza lo que la pantalla muestra
       return j;
     } finally { clearTimeout(t); }
   }
@@ -513,10 +514,13 @@ App = (() => {
   // ---------- respuestas en Google Sheets (cola sin conexión, ligada al usuario) ----------
   const metaText = () => 'Responde: ' + (sess ? sess.nombre + ' (' + sess.rol + ')' : '—') + (queue.length ? ' · ' + queue.length + ' pendiente(s) de envío' : '');
   let flushing = false;
+  let avisoSinPermiso = false;
   async function flush() {
     const mine = logged() ? queue.filter(r => r.uid === sess.user) : [];
     if (logged() && prefsDirty && !prefTimer) savePrefs();
     if (flushing || !mine.length) { emit('queue', queue.length); return; }
+    if (!puede('responder')) { if (!avisoSinPermiso) { avisoSinPermiso = true; emit('toast', `Tienes ${mine.length} respuesta(s) guardada(s) que no se enviarán: tu usuario no puede registrar la planificación.`); } emit('queue', queue.length); return; }   // se conservan por si te devuelven el permiso
+    avisoSinPermiso = false;
     flushing = true;
     try {
       const j = await api('submit', {items: mine});
@@ -527,7 +531,8 @@ App = (() => {
         if (ok.size) { emit('toast', `${ok.size} respuesta(s) enviadas a Google Sheets`); emit('status');
           if (cur) document.querySelectorAll('.vform .vmeta').forEach(el => el.textContent = metaText());
           if (cur) document.querySelectorAll('.vform .vlast').forEach(el => { const v = valOf(cur.id); el.innerHTML = `${valTag(v)} ${esc(v.u || '')} ${v.t ? esc(String(v.t).slice(0, 16).replace('T', ' ')) : ''}${v.n ? `<div class="vnote">“${esc(v.n)}”</div>` : ''}`; }); }
-      } else if (j.code !== 'sesion') emit('toast', j.error || 'El servidor rechazó el envío');
+      } else if (j.code === 'permiso') { avisoSinPermiso = true; emit('toast', j.error || 'El servidor rechazó el envío: tu usuario no puede registrar la planificación.'); }   // api() ya pidió actualizar los permisos; no se reintenta cada minuto
+      else if (j.code !== 'sesion') emit('toast', j.error || 'El servidor rechazó el envío');
     } catch (e) { emit('toast', 'Sin conexión con Google Sheets: las respuestas quedan guardadas para reenvío'); }
     finally { flushing = false; emit('queue', queue.length); }
   }
@@ -544,14 +549,22 @@ App = (() => {
       applyFilters(); emit('programa', PROG); if (cur) emit('select', cur);
     } catch (e) { /* sin conexión o servidor sin la hoja: se sigue con el último programa conocido */ } finally { progOcupado = false; }
   }
+  let ultimoSync = 0;   // última vez que se consultó al servidor por el estado, los permisos y el perfil
   async function refreshStatus() {
     if (!cfg.url || !logged()) return;
+    ultimoSync = Date.now();
     cargarPrograma();   // en paralelo con la sincronización (antes esperaba a que ella terminara)
     try {
       const j = await api('sync');
       if (j.ok) {
         remote = {}; Object.entries(j.status || {}).forEach(([k, v]) => remote[String(k).padStart(5, '0')] = v);
-        if (j.rol && (sess.rol !== j.rol || sess.nombre !== j.nombre || JSON.stringify(sess.permisos) !== JSON.stringify(j.permisos))) { setSess({...sess, rol: j.rol, nombre: j.nombre, ficha: j.ficha || '', permisos: j.permisos}); emit('perfil', sess); }
+        if (j.rol && (sess.rol !== j.rol || sess.nombre !== j.nombre || JSON.stringify(sess.permisos) !== JSON.stringify(j.permisos))) {
+          const cambioPermisos = JSON.stringify(sess.permisos) !== JSON.stringify(j.permisos) || sess.rol !== j.rol;
+          if (cambioPermisos) emit('toast', `Un administrador actualizó tus permisos (rol: ${j.rol}).`);   // primero el aviso general: si además se cierra algo concreto (formularios), ese mensaje, más específico, queda visible al final
+          setSess({...sess, rol: j.rol, nombre: j.nombre, ficha: j.ficha || '', permisos: j.permisos}); emit('perfil', sess);
+          if (cambioPermisos && cur) emit('select', cur);   // la ficha abierta se redibuja con lo que ahora puedes hacer
+        }
+        if (j.mv !== undefined) { const ant = mvServidor; mvServidor = j.mv; if (ant !== null && ant !== j.mv) emit('maestros', j.mv); }   // un administrador cambió los maestros
         applyPrefs(j.prefs); emit('status');
       }
     } catch {}
@@ -573,6 +586,14 @@ App = (() => {
   function saveCfg(c) { Object.assign(cfg, c); LS.set('cfg', cfg); flush(); refreshStatus(); }
   addEventListener('online', () => { flush(); refreshStatus(); });
   setInterval(() => { flush(); }, 60000);
+  // Los permisos los decide el servidor en CADA acción; esto mantiene la pantalla al día aunque la persona no toque nada:
+  // cada 3 minutos con la app a la vista, y al volver a la pestaña/ventana (máx. una consulta cada 20 s).
+  let permMs = 180000, permTimer = null, mvServidor = null;
+  const refrescarPermisos = (min) => { if (logged() && !document.hidden && Date.now() - ultimoSync > min) refreshStatus(); };
+  const armarPerm = () => { clearInterval(permTimer); permTimer = setInterval(() => refrescarPermisos(0), permMs); };
+  armarPerm();
+  document.addEventListener('visibilitychange', () => refrescarPermisos(20000));
+  addEventListener('focus', () => refrescarPermisos(20000));
 
   // ---------- GPS ----------
   let lastPos = null, geoDenied = false;
@@ -693,9 +714,9 @@ App = (() => {
   }
 
   return {META: META || {}, D, byId, F, CAT, PCAT, FLAGS, vis, cfg, esc, fmt, init: initMap, select, step, fitLocal, fitAll, applyFilters, options, csv, flush, refreshStatus,
-    saveCfg, locate, on, savePrefs, hasFilters, clearFilters, CAPS, capasCerca, setCapas, cercaCapa, _t: {fraccionSobre, distPlantio, capaBBox, reglaSobre, tipPlantio, submit, get etiquetas() { return ETQ.ultimo; }, dibujarEtiquetas}, valOf, valTag, srcTag, htmlKpis, htmlDetail, htmlPanelCapas, bindCapas, htmlForm, bind, kmFlag,
+    saveCfg, locate, on, savePrefs, hasFilters, clearFilters, CAPS, capasCerca, setCapas, cercaCapa, _t: {fraccionSobre, distPlantio, capaBBox, reglaSobre, tipPlantio, submit, setPermMs: ms => { permMs = ms; armarPerm(); }, olvidarSync: () => { ultimoSync = 0; }, get etiquetas() { return ETQ.ultimo; }, dibujarEtiquetas}, valOf, valTag, srcTag, htmlKpis, htmlDetail, htmlPanelCapas, bindCapas, htmlForm, bind, kmFlag,
     cargarPrograma, get programa() { return PROG; }, get programaDoc() { return PROG_DOC; },
-    get etqPref() { return {...aj}; }, setEtq,
+    get etqPref() { return {...aj}; }, setEtq, get maeVersion() { return mvServidor; },
     auth: {logged, login, logout, changePassword, get sess() { return sess; }, puede, puedeCsv, canSubmit: () => puede('responder')},
     api: (accion, datos) => api(accion, datos || {}, true),
     get filtered() { return filtered; }, get cur() { return cur; }, get queueLen() { return queue.length; }, get map() { return map; }};

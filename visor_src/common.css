@@ -142,3 +142,11 @@ details.mods[open] summary{border-color:var(--amber)}
 .etqPrev{display:flex;align-items:center;gap:10px;margin:8px 0 4px;padding:8px 10px;border-radius:6px;background:#2f4a33}
 .etqPrev #etqPrevN{font-weight:500;text-shadow:0 0 3px rgba(0,0,0,.75),0 0 2px rgba(0,0,0,.75);min-width:60px}.etqPrev .etqAy{flex:1;color:#9fb3a4;font-size:11.5px}
 .etqAy2{font-size:11.5px;color:var(--mute);margin-top:4px}
+/* editor de maestros (solo Administrador) */
+.mtabs{display:flex;flex-wrap:wrap;gap:6px;margin:8px 0}
+.mtabs button{background:rgba(255,255,255,.04);border:1px solid var(--line);border-radius:6px;padding:6px 10px;font-size:13px;color:var(--ink)}
+.mtabs button.on{border-color:var(--amber);color:var(--amber);font-weight:600}.mtabs small{color:var(--mute);margin-left:4px}.mtabs .mw{color:var(--amber);margin-left:4px}
+.mhd{display:flex;align-items:center;gap:10px;flex-wrap:wrap;margin:6px 0}.mhd input[type=search]{flex:1;min-width:160px;margin:0}
+.mstwrap{max-height:380px}.admt.mst td{vertical-align:middle}.admt.mst input,.admt.mst select{margin:0;min-width:90px;width:100%}
+.admt.mst tr.sucia td{background:rgba(242,177,52,.08)}.admt.mst tr.mnew td{background:rgba(125,211,252,.07)}
+#mstMsg{min-height:18px;font-size:13px;color:var(--amber)}#mstMsg[data-ok="1"]{color:#8fd9a8}

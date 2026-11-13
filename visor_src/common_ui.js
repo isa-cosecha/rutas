@@ -66,7 +66,7 @@ UI = (() => {
     const s = auth.sess;
     $('cfgMsg').textContent = m || '';
     $('cfgWho').innerHTML = s ? `Usuario: <b>${A.esc(s.nombre)}</b> (${A.esc(s.user)}) · Rol: <b>${A.esc(s.rol)}</b>` : 'Sin sesión';
-    $('cfgAdm').hidden = !A.auth.puede('capas_admin'); $('cfgUsr').hidden = !A.auth.puede('usuarios_admin');
+    $('cfgAdm').hidden = !A.auth.puede('capas_admin'); $('cfgUsr').hidden = !A.auth.puede('usuarios_admin'); $('cfgMst').hidden = !A.auth.puede('maestros_admin');
     pintarEtq();
     // Las conexiones (URL de Apps Script, URL de datos en GitHub y token) sólo las ve y edita el Administrador de la plataforma.
     // Para los demás ni se muestran ni se cargan en los campos.
@@ -104,6 +104,7 @@ UI = (() => {
       $('pwDlg').close(); toast(l.ok ? 'Clave cambiada' : 'Clave cambiada. Ingresa de nuevo.');
     } catch { m('Sin conexión con el servidor.'); } };
   if (typeof initAdmin === 'function') initAdmin();   // herramientas de administrador (admin_capas.js)
+  if (typeof initAdminMaestros === 'function') initAdminMaestros();   // edición de maestros (admin_maestros.js)
   if (typeof initAdminUsuarios === 'function') initAdminUsuarios();   // administración de usuarios (admin_usuarios.js)
   if (typeof initForms === 'function') initForms();   // formularios de campo como módulo (forms.js)
   return {toast, openCfg, ensureLogin};

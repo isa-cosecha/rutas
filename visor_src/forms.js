@@ -49,7 +49,7 @@ const MAE_FRESCO_MS = 10 * 60 * 1000;   // los catálogos guardados se considera
 function leerCacheMae() {
   if (S.mae) return true;
   const c = LS.get('mae', null); if (!c) return false;
-  S.mae = c.mae; S.odo = Object.assign({}, c.odo, S.odo); S.cfg = c.cfg; S.hoy = c.hoy; S.maeT = c.t; return true;
+  S.mae = c.mae; S.odo = Object.assign({}, c.odo, S.odo); S.cfg = c.cfg; S.hoy = c.hoy; S.maeT = c.t; S.mv = c.mv; return true;
 }
 /** Un odómetro guardado en este teléfono y todavía sin enviar manda sobre lo que diga el servidor (que aún no lo conoce). */
 function mezclarOdo(servidor) {
@@ -68,8 +68,8 @@ function cargarMaestros(forzar) {
     try {
       const j = await api('form_maestros', {zafra: zafraCalendario(ymd(new Date()))});
       if (!j.ok) return;
-      marcarRed(true); S.mae = j.maestros; S.odo = mezclarOdo(j.odometros); S.cfg = j.config; S.hoy = j.hoy; S.maeT = Date.now();
-      LS.set('mae', {mae: S.mae, odo: S.odo, cfg: S.cfg, hoy: S.hoy, t: S.maeT});
+      marcarRed(true); S.mae = j.maestros; S.odo = mezclarOdo(j.odometros); S.cfg = j.config; S.hoy = j.hoy; S.maeT = Date.now(); S.mv = j.mv;
+      LS.set('mae', {mae: S.mae, odo: S.odo, cfg: S.cfg, hoy: S.hoy, t: S.maeT, mv: S.mv});
       if (j.plantios && j.zafra && !plantiosDelPrograma(j.zafra)) { S.plantios[j.zafra] = j.plantios; LS.set('plan_' + j.zafra, j.plantios); }   // vienen en la misma respuesta
       const hoyDisp = ymd(new Date()); if (S.hoy && Math.abs((new Date(hoyDisp) - new Date(S.hoy)) / 86400000) >= 1) toast('⚠ La fecha de este teléfono (' + hoyDisp + ') no coincide con la del servidor (' + S.hoy + '). Revísala.', 7000);
       if (ROOT) pintarTabs();   // no se redibuja el formulario: se borraría lo que la persona está escribiendo
@@ -499,7 +499,16 @@ document.addEventListener('click', e => {   // botones del mapa: abrir los formu
   abrir(b.dataset.ffopen || null, b.dataset.ffplantio ? {plantio: b.dataset.ffplantio, frente: b.dataset.fffrente, nombre: b.dataset.ffnombre} : null);
 });
 A.on('login', () => { iniciar(); });
-A.on('perfil', () => { S.formularios = formulariosDe(); entradas(); if (ROOT) pintarTabs(); });
+A.on('perfil', () => {
+  S.formularios = formulariosDe(); entradas();
+  if (!ROOT) return; pintarTabs();
+  if (!Forms.abierto) return;
+  const ms = modulosPermitidos();
+  if (!ms.length) { cerrar(); UI.toast('Tu usuario ya no tiene formularios habilitados.'); }   // le quitaron todos mientras los tenía abiertos
+  else if (S.vista !== 'pendientes' && !ms.includes(S.vista)) { S.vista = ms[0]; pintarVista(); UI.toast('Se cambió de formulario: ya no tienes permiso para el anterior.'); }
+});
+A.on('maestros', () => { cargarMaestros(true); });
+A.on('status', () => { if (A.maeVersion != null && S.mv != null && A.maeVersion !== S.mv) cargarMaestros(true); });   // los catálogos guardados son de una versión anterior de los maestros   // un administrador cambió los maestros: se vuelven a bajar ya, sin esperar los 10 minutos
 A.on('logout', () => {   // al salir: se cierra la pantalla y se borran los catálogos del teléfono (nombres y fichas); la cola de pendientes se conserva
   cerrar(); S.mae = null; S.plantios = {}; S.formularios = []; LS.del('mae'); Object.keys(localStorage).filter(k => k.indexOf('ff_plan_') === 0).forEach(k => localStorage.removeItem(k)); entradas(); pintarBadges();
 });

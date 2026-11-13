@@ -5,7 +5,7 @@
 function initAdminMaestros() {
   const $ = id => document.getElementById(id), A = App, esc = A.esc;
   const puede = () => A.auth.puede('maestros_admin');
-  let datos = null, tabla = 'zafras', cargando = false;
+  let datos = null, tabla = 'zafras', cargando = false, corriendo = false, ultErr = '';
   const aviso = (t, bien) => { const el = $('mstMsg'); el.textContent = t || ''; el.dataset.ok = bien ? '1' : ''; };
 
   /** Llama al servidor. Devuelve la respuesta si ok; si no, muestra el motivo y devuelve null (y la tabla se actualiza si hubo un conflicto). */
@@ -13,9 +13,10 @@ function initAdminMaestros() {
     try {
       const j = await A.api(accion, d);
       if (j && j.ok) return j;
-      if (j && j.code !== 'sesion') { aviso(j.error || 'No se pudo completar la acción.'); if (j.code === 'conflicto') cargar(); }
+      if (j && j.code !== 'sesion') { ultErr = j.error || 'No se pudo completar la acción.'; aviso(ultErr); if (j.code === 'conflicto' && !corriendo) cargar(); }
+      else ultErr = 'La sesión caducó: vuelve a entrar.';
       return null;
-    } catch { aviso('Sin conexión con el servidor.'); return null; }
+    } catch { ultErr = 'Sin conexión con el servidor.'; aviso(ultErr); return null; }
   }
   function abrir() {
     if (!puede()) { UI.toast('No tienes permiso para editar los maestros.'); return; }
@@ -35,9 +36,10 @@ function initAdminMaestros() {
   }
   function restaurarBorradores(b, soltar) {
     if (!b) return;
-    if (b.nueva && soltar !== 'nueva') { const tn = document.querySelector('#mstT tr.mnew'); if (tn) Object.entries(b.nueva).forEach(([k, v]) => { const i = tn.querySelector(`[data-k="${k}"]`); if (i) i.value = v; }); }
+    const sol = Array.isArray(soltar) ? soltar : [soltar];
+    if (b.nueva && !sol.includes('nueva')) { const tn = document.querySelector('#mstT tr.mnew'); if (tn) Object.entries(b.nueva).forEach(([k, v]) => { const i = tn.querySelector(`[data-k="${k}"]`); if (i) i.value = v; }); }
     document.querySelectorAll('#mstT tr[data-f]').forEach(tr => {
-      const v = b.filas[tr.dataset.antes]; if (!v || tr.dataset.antes === soltar) return;
+      const v = b.filas[tr.dataset.antes]; if (!v || sol.includes(tr.dataset.antes)) return;
       Object.entries(v).forEach(([k, x]) => { const i = tr.querySelector(`[data-k="${k}"]`); if (i) i.value = x; });
       tr.querySelector('.mgu').disabled = false; tr.classList.add('sucia');
     });
@@ -48,7 +50,7 @@ function initAdminMaestros() {
     const j = await llamar('mae_listar', {});
     cargando = false; if (!j) return;
     datos = j; if (!datos.tablas[tabla]) tabla = datos.orden[0];
-    pintarTabs(); pintar(); restaurarBorradores(borr, soltar); if (sc) sc.scrollTop = y;
+    pintarTabs(); pintar(); restaurarBorradores(borr, soltar); actualizarTodo(); if (sc) sc.scrollTop = y;
   }
   const inactiva = (t, r) => { const i = t.cols.findIndex(c => c.k === 'activo'); return i >= 0 && ['no', 'inactivo', 'inactiva', 'false', '0'].includes(String(r.v[i] == null ? '' : r.v[i]).trim().toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '')); };
   const avisoAts = j => !j.ats ? '' : j.ats.error ? ` PERO la hoja Administrador del ATS NO se pudo actualizar: ${j.ats.error}` : (j.ats.agregadas || j.ats.actualizadas) ? ' La hoja del ATS se actualizó sola.' : '';
@@ -92,22 +94,55 @@ function initAdminMaestros() {
   $('mstTabs').onclick = e => { const b = e.target.closest('button[data-t]'); if (!b) return; tabla = b.dataset.t; aviso(''); $('mstQ').value = ''; pintarTabs(); pintar(); };   // (los borradores sin guardar de la otra tabla se descartan al cambiar de pestaña)
   $('mstQ').oninput = () => { if (datos) pintar(); };
   $('mstOcIn').onchange = () => { if (datos) pintar(); };
-  $('mstT').addEventListener('input', e => { const tr = e.target.closest('tr[data-f]'); if (!tr) return; const b = tr.querySelector('.mgu'); b.disabled = false; tr.classList.add('sucia'); });
+  $('mstT').addEventListener('input', e => { const tr = e.target.closest('tr[data-f]'); if (!tr || tr.classList.contains('guardando')) return; const b = tr.querySelector('.mgu'); b.disabled = false; tr.classList.add('sucia'); actualizarTodo(); });
+  const actualizarTodo = () => { const n = document.querySelectorAll('#mstT tr.sucia[data-f]:not(.guardando)').length; $('mstTodo').hidden = n < 2; $('mstTodo').textContent = `Guardar todo (${n})`; };
   $('mstT').addEventListener('keydown', e => { if (e.key !== 'Enter' || !e.target.matches('[data-k]')) return; e.preventDefault(); const tr = e.target.closest('tr'); const b = tr.querySelector('.mag, .mgu:not([disabled])'); if (b) b.click(); });
+  /* COLA DE GUARDADOS. Cada clic en Guardar / Agregar / Eliminar entra en una cola que se atiende de uno en uno, en el orden de los clics
+   * (el servidor de Google atiende una petición a la vez y cada una espera su turno como máximo 20 s: con muchas a la vez, las últimas se perdían).
+   * La tabla se vuelve a leer UNA sola vez, cuando la cola se vacía; lo escrito y no guardado en otras filas se conserva. */
+  const ops = []; let res = {ok: 0, mal: 0, soltar: [], ats: null, atsOk: false, errs: [], tipos: [], titulo: ''};
+  function encolar(op) {
+    op.tr.classList.add('guardando'); op.tr.querySelectorAll('button, input, select').forEach(x => { x.disabled = true; });
+    ops.push(op); aviso(`Guardando… ${ops.length} en cola`, true); actualizarTodo(); if (!corriendo) correr();
+  }
+  async function correr() {
+    corriendo = true;
+    while (ops.length) {
+      const op = ops.shift(); aviso(`Guardando… (${res.ok + res.mal + 1} de ${res.ok + res.mal + 1 + ops.length})`, true);
+      const j = await llamar(op.accion, op.datos());
+      if (j) {
+        res.ok++; res.soltar.push(op.soltar); res.tipos.push(op.tipo); res.titulo = op.titulo;
+        if (j.ats) { if (j.ats.error) res.ats = j.ats.error; else if (j.ats.agregadas || j.ats.actualizadas) res.atsOk = true; }
+        if (op.accion === 'mae_eliminar') ops.forEach(o => { if (o.fila > op.fila) o.fila--; });   // al eliminar una fila, las de abajo suben una
+      } else { res.mal++; res.errs.push(ultErr); }
+    }
+    const r = res; res = {ok: 0, mal: 0, soltar: [], ats: null, atsOk: false, errs: [], tipos: [], titulo: ''}; corriendo = false;
+    await cargar(r.soltar);   // una sola recarga cuando la cola queda vacía
+    const nota = r.ats ? ` PERO la hoja Administrador del ATS NO se pudo actualizar: ${r.ats}` : r.atsOk ? ' La hoja del ATS se actualizó sola.' : '';
+    if (r.ok === 1 && !r.mal) { const tp = r.tipos[0]; UI.toast(`${r.titulo}: ${tp === 'agregar' ? 'agregado' : tp === 'eliminar' ? 'eliminado' : 'guardado'}`); aviso((tp === 'agregar' ? 'Agregado ✓ Los formularios ya lo ven.' : tp === 'eliminar' ? 'Eliminado ✓' : 'Guardado ✓ Los formularios ya lo ven.') + nota, !r.ats); }
+    else if (r.ok && !r.mal) { UI.toast(`${r.titulo}: ${r.ok} cambios guardados`); aviso(`Guardados ${r.ok} cambios ✓ Los formularios ya lo ven.` + nota, !r.ats); }
+    else if (r.ok) aviso(`Guardados ${r.ok} ✓ pero ${r.mal} con error: ${r.errs[0]} (las filas con error siguen marcadas para que las reintentes).` + nota, false);
+    else aviso(`No se guardó (${r.mal}): ${r.errs[0] || 'error desconocido'}`, false);
+  }
+  const opGuardar = (tr, t) => { const vals = valores(tr), antes = JSON.parse(tr.dataset.antes), tb = tabla; return {accion: 'mae_guardar', tipo: 'guardar', tr, titulo: t.titulo, soltar: tr.dataset.antes, fila: +tr.dataset.f, datos() { return {tabla: tb, fila: this.fila, antes, valores: vals}; }}; };
   $('mstT').addEventListener('click', async e => {
-    const b = e.target.closest('button'); if (!b) return; const tr = b.closest('tr'), t = datos.tablas[tabla];
+    const b = e.target.closest('button'); if (!b || b.disabled) return; const tr = b.closest('tr'), t = datos.tablas[tabla], tb = tabla;
     if (b.classList.contains('mag')) {                                   // agregar
-      b.disabled = true; aviso(''); const j = await llamar('mae_guardar', {tabla, valores: valores(tr)}); b.disabled = false;
-      if (j) { UI.toast(`${t.titulo}: agregado`); aviso('Agregado ✓ Los formularios ya lo ven.' + avisoAts(j), !(j.ats && j.ats.error)); await cargar('nueva'); }
+      const vals = valores(tr); aviso('');
+      encolar({accion: 'mae_guardar', tipo: 'agregar', tr, titulo: t.titulo, soltar: 'nueva', fila: 0, datos() { return {tabla: tb, valores: vals}; }});
     } else if (b.classList.contains('mgu')) {                            // guardar cambios de una fila
-      b.disabled = true; aviso(''); const j = await llamar('mae_guardar', {tabla, fila: +tr.dataset.f, antes: JSON.parse(tr.dataset.antes), valores: valores(tr)});
-      if (j) { UI.toast(`${t.titulo}: guardado`); aviso('Guardado ✓ Los formularios ya lo ven.' + avisoAts(j), !(j.ats && j.ats.error)); await cargar(tr.dataset.antes); } else b.disabled = false;
+      aviso(''); encolar(opGuardar(tr, t));
     } else if (b.classList.contains('mel')) {                            // eliminar
       const antes = JSON.parse(tr.dataset.antes), nom = antes.filter(x => x !== '').join(' · ');
-      if (!confirm(`¿Eliminar "${nom}" de ${t.titulo}?\n\nLos registros ya guardados conservan su valor, pero esta opción dejará de aparecer para elegirla en los formularios.${tabla === 'administradores' ? '\n\nSu ficha se queda en la hoja del ATS para que los registros viejos conserven el nombre. Si solo quieres que deje de aparecer en los formularios, mejor márcala Activo = No.' : ''}`)) return;
-      aviso(''); const j = await llamar('mae_eliminar', {tabla, fila: +tr.dataset.f, antes}); if (j) { UI.toast(`${t.titulo}: eliminado`); aviso('Eliminado ✓', true); await cargar(tr.dataset.antes); }
+      if (!confirm(`¿Eliminar \"${nom}\" de ${t.titulo}?\n\nLos registros ya guardados conservan su valor, pero esta opción dejará de aparecer para elegirla en los formularios.${tabla === 'administradores' ? '\n\nSu ficha se queda en la hoja del ATS para que los registros viejos conserven el nombre. Si solo quieres que deje de aparecer en los formularios, mejor márcala Activo = No.' : ''}`)) return;
+      aviso(''); encolar({accion: 'mae_eliminar', tipo: 'eliminar', tr, titulo: t.titulo, soltar: tr.dataset.antes, fila: +tr.dataset.f, datos() { return {tabla: tb, fila: this.fila, antes}; }});
     }
   });
+  $('mstTodo').onclick = e => {   // guarda de una vez todas las filas con cambios, en el orden en que aparecen
+    e.preventDefault(); const t = datos.tablas[tabla]; aviso('');
+    document.querySelectorAll('#mstT tr.sucia[data-f]:not(.guardando)').forEach(tr => encolar(opGuardar(tr, t)));
+  };
+
   $('mstTraer').onclick = async e => {   // trae de las hojas de camionetas (zafra más reciente) las camionetas que aún no están en Equipos
     e.preventDefault(); const tr = datos.traer;
     if (!confirm(`De las hojas de camionetas (zafra ${tr.zafra}) se agregarán a Equipos, con categoría Camionetas:\n\n${tr.equipos.join(', ')}\n\nDespués puedes corregir o quitar lo que no corresponda.\n(Los supervisores se agregan en Personal, porque necesitan ficha.)`)) return;

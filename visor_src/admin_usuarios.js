@@ -10,14 +10,17 @@ function initAdminUsuarios() {
   const aviso = t => { const el = $('usrNM'); el.textContent = t || ''; };
 
   /** Llama al servidor. Devuelve la respuesta si ok; si no, muestra el motivo y devuelve null. */
-  async function llamar(accion, datos) {
+  let ultErr = '', colaU = Promise.resolve();
+  async function llamarYa(accion, datos) {
     try {
       const j = await A.api(accion, datos);
       if (j && j.ok) return j;
-      if (j && j.code !== 'sesion') UI.toast(j.error || 'No se pudo completar la acción.');
+      if (j && j.code !== 'sesion') { ultErr = j.error || 'No se pudo completar la acción.'; UI.toast(ultErr); } else ultErr = 'La sesión caducó: vuelve a entrar.';
       return null;
-    } catch { UI.toast('Sin conexión con el servidor de usuarios.'); return null; }
+    } catch { ultErr = 'Sin conexión con el servidor de usuarios.'; UI.toast(ultErr); return null; }
   }
+  /** Las llamadas salen de una en una, en el orden de los clics: el servidor de Google atiende una petición a la vez y cada una espera su turno como máximo 20 s; con varias a la vez las últimas se perdían y el orden de llegada podía cambiar. */
+  function llamar(accion, datos) { const p = colaU.then(() => llamarYa(accion, datos)); colaU = p.catch(() => {}); return p; }
 
   function abrir() {
     if (!puede()) { UI.toast('No tienes permiso para administrar usuarios.'); return; }
@@ -29,6 +32,7 @@ function initAdminUsuarios() {
   $('usrForm').onsubmit = e => e.preventDefault();      // Enter dentro de los campos no debe cerrar el diálogo
 
   async function cargar() {
+    await vaciarForms();   // antes de redibujar, lo que se eligió en las casillas debe estar guardado
     if (cargando) return; cargando = true;
     const sc = $('usrDlg').querySelector('.usrwrap'), y = sc ? sc.scrollTop : 0;
     const j = await llamar('usr_listar', {});
@@ -45,6 +49,33 @@ function initAdminUsuarios() {
   const idsDe = u => u.modulos === 'ninguno' ? [] : (u.modulos && u.modulos !== 'todos') ? u.modulos.split(',') : forms.map(f => f.id);
   const planDe = u => u.planificacion !== false;   // registro de la planificación (según lo planificado / diferente): vacío = habilitado
   const resumenForms = (ids, plan) => (ids.length === forms.length && plan) ? 'Todo' : (!ids.length && !plan) ? 'Ninguno' : (!ids.length ? 'Solo planificación' : ids.length + ' de ' + forms.length + (plan ? ' + planif.' : ''));
+  /* CASILLAS DE FORMULARIOS. Cada casilla no manda su propia petición: se espera un instante a que termines de marcar (o a que cierres la lista) y se guarda UNA vez
+   * el estado final; si aún hay un guardado en curso, al terminar se manda el estado más reciente. La pantalla nunca se revierte sola: si algo falla, se avisa y se vuelve a leer del servidor. */
+  const pendF = {};
+  const estadoDet = det => ({ids: [...det.querySelectorAll('input.um:checked')].map(i => i.value), plan: det.querySelector('input.up').checked});
+  function programarForms(u, det) { const p = pendF[u.usuario] = pendF[u.usuario] || {}; p.det = det; clearTimeout(p.t); p.t = setTimeout(() => lanzarForms(u, p), 600); }
+  function lanzarForms(u, p) {
+    clearTimeout(p.t); p.t = null;
+    if (p.vuelo) { p.otra = true; return p.prom; }
+    p.vuelo = true;
+    p.prom = (async () => {
+      let fallo = '';
+      do {
+        p.otra = false; const {ids, plan} = estadoDet(p.det), valor = valorForms(ids);
+        const j = await llamar('usr_editar', {usuario: u.usuario, formularios: valor, planificacion: plan});   // se puede dejar sin ningún formulario y/o sin registro de planificación
+        if (j) { u.modulos = valor === 'todos' ? 'todos' : (ids.length ? ids.join(',') : 'ninguno'); u.planificacion = plan; } else fallo = ultErr || 'No se pudo guardar.';
+      } while (p.otra);
+      p.vuelo = false;
+      if (fallo) { UI.toast(`No se guardaron los permisos de ${u.usuario}: ${fallo}`); cargar(); }
+      else { const {ids, plan} = estadoDet(p.det); UI.toast(`Permisos de ${u.usuario}: ${resumenForms(ids, plan)}`); }
+    })();
+    return p.prom;
+  }
+  async function vaciarForms() {   // guarda ya lo que esté esperando y espera a que termine todo lo que está en curso
+    const ps = [];
+    Object.entries(pendF).forEach(([k, p]) => { if (p.t) { const u = lista.find(x => x.usuario === k); if (u) lanzarForms(u, p); else { clearTimeout(p.t); p.t = null; } } if (p.vuelo && p.prom) ps.push(p.prom); });
+    await Promise.all(ps);
+  }
   function celdaForms(u) {   // desplegable con una casilla por formulario (no aplica a "Consulta": ese rol no registra nada)
     if (u.rol === 'Consulta') return '<span class="admsub" style="margin:0">no aplica</span>';
     const sel = idsDe(u), plan = planDe(u);
@@ -147,13 +178,17 @@ function initAdminUsuarios() {
       if (!j) e.target.value = u.ficha || ''; else UI.toast(ficha ? `Ficha de ${u.usuario}: ${ficha}` : `${u.usuario}: sin ficha`);
       cargar();
     } else if (e.target.classList.contains('um') || e.target.classList.contains('up')) {
-      const det = e.target.closest('details'), ids = [...det.querySelectorAll('input.um:checked')].map(i => i.value), plan = det.querySelector('input.up').checked;
-      const valor = valorForms(ids), j = await llamar('usr_editar', {usuario: u.usuario, formularios: valor, planificacion: plan});   // se puede dejar sin ningún formulario y/o sin registro de planificación
-      if (!j) { const prev = idsDe(u); det.querySelectorAll('input.um').forEach(i => { i.checked = prev.includes(i.value); }); det.querySelector('input.up').checked = planDe(u); return; }
-      u.modulos = valor === 'todos' ? 'todos' : (ids.length ? ids.join(',') : 'ninguno'); u.planificacion = plan; det.querySelector('summary').textContent = resumenForms(ids, plan);   // sin redibujar la tabla: el desplegable sigue abierto
-      UI.toast(`Permisos de ${u.usuario}: ${resumenForms(ids, plan)}`);
+      const det = e.target.closest('details'), est = estadoDet(det);
+      det.querySelector('summary').textContent = resumenForms(est.ids, est.plan);   // se ve al instante; el guardado se agrupa (sin redibujar la tabla: el desplegable sigue abierto)
+      programarForms(u, det);
     }
   });
+  $('usrT').addEventListener('toggle', e => {   // al cerrar la lista de formularios se guarda sin esperar
+    if (!e.target.matches || !e.target.matches('details.mods') || e.target.open) return;
+    const tr = e.target.closest('tr[data-u]'), u = tr && lista.find(x => x.usuario === tr.dataset.u), p = u && pendF[u.usuario]; if (p && p.t) lanzarForms(u, p);
+  }, true);
+  $('usrDlg').addEventListener('close', () => { vaciarForms(); });
+  document.addEventListener('visibilitychange', () => { if (document.hidden) vaciarForms(); });
   $('usrT').addEventListener('keydown', e => { if (e.key === 'Enter' && e.target.classList.contains('un')) { e.preventDefault(); e.target.blur(); } });
   $('usrT').addEventListener('click', async e => {
     const b = e.target.closest('button'); if (!b) return; const u = fila(b); if (!u) return;

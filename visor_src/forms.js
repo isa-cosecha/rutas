@@ -200,14 +200,13 @@ FORM.combustible = {
     ${campo('¿Qué se abasteció?', segHTML('tipo', [['planta', 'Planta / Cisterna'], ['moto', 'Moto']]), '', '', 'full')}
     ${cabeceraComun()}
     <div id="cbPlanta"><div class="fila">${campo('Cisterna', '<select name="cisterna"></select>')}${campo('Planta / motor', '<select name="motorPlanta"></select>')}</div>${campo('Conductor de la cisterna', selHTML('condCis', 'Buscar por ficha o nombre'))}</div>
-    <div id="cbMoto" hidden>${campo('Moto', '<select name="motorMoto"></select>')}${campo('Quién la abasteció', selHTML('condMoto', 'Buscar por ficha o nombre'))}${campo('Abastecida desde', '<select name="origen"></select>', 'Normalmente la misma moto; cámbialo si la cargó otra unidad.')}</div>
+    <div id="cbMoto" hidden>${campo('Moto', '<select name="motorMoto"></select>')}${campo('Quién la abasteció', selHTML('condMoto', 'Buscar por ficha o nombre'))}</div>
     <div class="fila">${campo('Cantidad (litros)', '<input type="number" name="litros" inputmode="decimal" step="any" min="0">')}<div id="cbOdo">${campo('Odómetro', '<input type="number" name="odometro" inputmode="decimal" step="any" min="0">', '', 'cbOdoAy')}</div></div>
     <button class="btn" id="cbGo" type="submit">Guardar registro</button></form></div></div>`,
   montar(root, datos) {
     cab(root, 'combustible'); zafraSel(root);
     $('[name=cisterna]', root).innerHTML = opcSelect(S.mae.equipos.Cisternas, 'Cisterna'); $('[name=motorPlanta]', root).innerHTML = opcSelect(S.mae.equipos.Plantas, 'Planta');
     $('[name=motorMoto]', root).innerHTML = opcSelect(S.mae.equipos.Motos, 'Moto');
-    $('[name=origen]', root).innerHTML = '<option value="">La misma moto</option>' + [...S.mae.equipos.Motos, ...S.mae.equipos.Cisternas].map(e => `<option>${esc(e)}</option>`).join('');
     const cc = (S.mae.operadores['Operador Cisterna'] || []).map(o => ({valor: o.id, texto: o.text, sub: 'ficha ' + o.id}));
     const cm = [...(S.mae.operadores['Operador Moto'] || []).map(o => ({valor: o.id, texto: o.text, sub: 'ficha ' + o.id})), ...S.mae.administradores.map(a => ({valor: String(a.id), texto: a.text, sub: 'ficha ' + a.id + ' · ' + (a.puesto === 'Supervisor' ? 'supervisor' : 'administrador')}))];
     bindSel(root, 'condCis', 'Conductor de la cisterna', () => cc, null, libreFicha); bindSel(root, 'condMoto', 'Quién abasteció la moto', () => cm, null, libreFicha);
@@ -223,7 +222,7 @@ FORM.combustible = {
   set(root, d) {
     segSet(root, 'tipo', d.tipo); $('[name=zafra]', root).value = d.zafra; $('[name=fecha]', root).value = d.fecha; segSet(root, 'turno', d.turno); $('[name=litros]', root).value = d.litros;
     const cond = String(d.conductor), tx = id => { const o = operadorPorId(cond) || adminPorId(cond); return o ? o.text : cond; };
-    if (d.tipo === 'moto') { $('#cbPlanta', root).hidden = true; $('#cbMoto', root).hidden = false; $('#cbOdo', root).hidden = false; $('[name=motorMoto]', root).value = d.motor; $('[name=origen]', root).value = d.cisterna && d.cisterna !== d.motor ? d.cisterna : ''; $('[name=odometro]', root).value = d.odometro; selSet(root, 'condMoto', cond, tx()); }
+    if (d.tipo === 'moto') { $('#cbPlanta', root).hidden = true; $('#cbMoto', root).hidden = false; $('#cbOdo', root).hidden = false; $('[name=motorMoto]', root).value = d.motor; $('[name=odometro]', root).value = d.odometro; selSet(root, 'condMoto', cond, tx()); }
     else { $('#cbPlanta', root).hidden = false; $('#cbMoto', root).hidden = true; $('#cbOdo', root).hidden = true; $('[name=cisterna]', root).value = d.cisterna; $('[name=motorPlanta]', root).value = d.motor; selSet(root, 'condCis', cond, tx()); }
   },
   async enviar(root) {
@@ -232,7 +231,7 @@ FORM.combustible = {
     const d = {tipo, zafra: g('zafra').value, fecha: g('fecha').value, turno: segGet(root, 'turno'), litros: lit};
     mk(g('fecha'), !d.fecha, 'Falta la fecha.'); mk(g('zafra'), !d.zafra, 'Falta la zafra.');
     if (tipo === 'moto') {
-      d.motor = g('motorMoto').value; d.cisterna = g('origen').value || d.motor; d.conductor = selGet(root, 'condMoto').valor; d.odometro = parseFloat(g('odometro').value);
+      d.motor = g('motorMoto').value; d.cisterna = d.motor; d.conductor = selGet(root, 'condMoto').valor; d.odometro = parseFloat(g('odometro').value);
       mk(g('motorMoto'), !d.motor, 'Elige la moto.'); mk($('[data-sel=condMoto]', root), !d.conductor, 'Elige quién abasteció la moto.'); mk(g('odometro'), !(d.odometro > 0), 'Escribe el odómetro de la moto.');
       if (lit > AVISOS.litrosMoto[1]) av.push(`${lit} litros es mucho para una moto (lo normal es hasta ${AVISOS.litrosMoto[1]}).`);
       const u = S.odo[d.motor]; if (u && d.odometro > 0) { if (d.odometro < u) av.push(`El odómetro (${d.odometro}) es menor que el último registrado (${u}).`); else if (d.odometro - u > AVISOS.odoSalto) av.push(`El odómetro avanzó ${fmt(d.odometro - u)} km desde el último registro (${u}). ¿Es correcto?`); }

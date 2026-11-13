@@ -187,3 +187,10 @@ Las de los vecinos se achican y se vuelven más translúcidas cuanto más lejos 
 - `sincronizarAts_()` agrega las fichas que falten y corrige el nombre solo si Personal trae `completo`; `sincAtsSeguro_()` la llama tras `mae_guardar` de Personal y devuelve `ats: {agregadas, actualizadas, error?}` sin hacer fallar el guardado. `mae_sync_ats` queda como acción manual.
 - `supEnLista_()` valida los supervisores de ATS y camionetas ("no está en Personal con puesto Supervisor" / "inactivo en Personal").
 - `mae_traer` solo agrega camionetas; `traer.supervisores` informa los supervisores de las hojas de camionetas que no están en Personal.
+
+## Guardados seguidos (cliente)
+
+- `admin_maestros.js`: `encolar()` / `correr()` atienden los guardados de uno en uno (`ops`), ajustan el número de fila de los pendientes cuando se elimina una fila de arriba y recargan **una sola vez** al vaciar la cola (`cargar(soltar)` acepta varias filas a soltar). `#mstTodo` ("Guardar todo (N)") encola todas las filas con cambios.
+- `admin_usuarios.js`: `llamar()` serializa las llamadas (`colaU`); las casillas de formularios usan `programarForms()` / `lanzarForms()` (guardado agrupado del estado final, 600 ms de espera) y `vaciarForms()` se ejecuta antes de volver a dibujar la tabla, al cerrar la lista (`toggle`), al cerrar el diálogo y al ocultar la pestaña. La pantalla no se revierte nunca por un fallo.
+- Motivo de fondo: `doPost` toma `LockService.getScriptLock()` con `waitLock(20000)`; muchas peticiones simultáneas de un mismo cliente agotan la espera. El simulador (`/__bloqueo`) imita ese turno único para probarlo (`e2e_guardados.py`).
+- Combustible de motos: sin campo "Abastecida desde"; `d.cisterna = d.motor` (el servidor sigue aceptando un origen distinto en registros viejos).

@@ -806,7 +806,7 @@ details.mods[open] summary{border-color:var(--amber)}
 .tipP b{display:block;color:var(--amber);font-size:14px;margin-bottom:5px}.tipP .tc{color:var(--mute);font-size:12px;margin-bottom:2px}
 .tipP .tk{display:grid;grid-template-columns:auto 1fr;gap:2px 16px}.tipP .tk span:nth-child(odd){color:var(--mute)}.tipP .tk span:nth-child(even){text-align:right;font-weight:600}
 #cfgAvz[hidden],#cfgSave[hidden]{display:none!important}
-.modsl .planl{border-top:1px solid var(--line);margin-top:6px;padding-top:6px;color:var(--amber)}
+.modsl input[type=checkbox],#usrNMods input[type=checkbox]{flex:0 0 16px;width:16px;height:16px;min-width:16px;margin:0}.modsl .planl{border-top:1px solid var(--line);margin-top:6px;padding-top:6px;color:var(--amber)}
 /* ajustes personales de los números de hectáreas (Mi cuenta) */
 .etqCfg{margin:10px 0;padding:10px;border:1px solid var(--line);border-radius:8px;background:rgba(255,255,255,.03)}
 .etqH{font-weight:600;font-size:13.5px;margin-bottom:6px}.etqS{font-weight:400;color:var(--mute);font-size:12px}
@@ -824,7 +824,7 @@ details.mods[open] summary{border-color:var(--amber)}
 .mtabs button.on{border-color:var(--amber);color:var(--amber);font-weight:600}.mtabs small{color:var(--mute);margin-left:4px}.mtabs .mw{color:var(--amber);margin-left:4px}
 .mhd{display:flex;align-items:center;gap:10px;flex-wrap:wrap;margin:6px 0}.mhd input[type=search]{flex:1;min-width:160px;margin:0}
 .mstwrap{max-height:380px}.admt.mst td{vertical-align:middle}.admt.mst input,.admt.mst select{margin:0;min-width:90px;width:100%}
-.admt.mst tr.inact td:not(:last-child){opacity:.5}.admt.mst tr.sucia td{background:rgba(242,177,52,.08)}.admt.mst tr.mnew td{background:rgba(125,211,252,.07)}
+.admt.mst tr.inact td:not(:last-child){opacity:.5}.admt.mst tr.guardando td{opacity:.6}.admt.mst tr.sucia td{background:rgba(242,177,52,.08)}.admt.mst tr.mnew td{background:rgba(125,211,252,.07)}
 #mstMsg{min-height:18px;font-size:13px;color:var(--amber)}#mstMsg[data-ok="1"]{color:#8fd9a8}
 
 #modeSw{margin-right:auto} dialog .row{flex-wrap:wrap}
@@ -938,7 +938,7 @@ details.mods[open] summary{border-color:var(--amber)}
   <h3>Maestros</h3>
   <div class="admnote">Solo administradores. Los cambios se guardan en las hojas de Google Sheets y los formularios de todos los toman al instante. Cada cambio queda en la hoja <b>Auditoría</b>. El programa de corte se carga con el menú de la hoja de cálculo (<i>Plataforma de campo → Cargar programa de corte</i>).</div>
   <div id="mstTabs" class="mtabs" role="tablist"></div>
-  <div class="mhd"><input id="mstQ" type="search" placeholder="Buscar en esta tabla…" autocomplete="off"><span id="mstCnt" class="admsub"></span><label id="mstOcInL" class="admsub" hidden style="display:inline-flex;gap:5px;align-items:center;white-space:nowrap"><input id="mstOcIn" type="checkbox"> Ocultar inactivos</label><button id="mstTraer" type="button" hidden></button></div>
+  <div class="mhd"><input id="mstQ" type="search" placeholder="Buscar en esta tabla…" autocomplete="off"><span id="mstCnt" class="admsub"></span><label id="mstOcInL" class="admsub" hidden style="display:inline-flex;gap:5px;align-items:center;white-space:nowrap"><input id="mstOcIn" type="checkbox"> Ocultar inactivos</label><button id="mstTraer" type="button" hidden></button><button id="mstTodo" type="button" class="primary" hidden>Guardar todo</button></div>
   <div id="mstNota" class="admsub"></div>
   <div id="mstMsg" role="alert"></div>
   <div class="usrwrap mstwrap"><table class="admt mst"><thead id="mstH"></thead><tbody id="mstT"></tbody></table></div>
@@ -2190,14 +2190,17 @@ function initAdminUsuarios() {
   const aviso = t => { const el = $('usrNM'); el.textContent = t || ''; };
 
   /** Llama al servidor. Devuelve la respuesta si ok; si no, muestra el motivo y devuelve null. */
-  async function llamar(accion, datos) {
+  let ultErr = '', colaU = Promise.resolve();
+  async function llamarYa(accion, datos) {
     try {
       const j = await A.api(accion, datos);
       if (j && j.ok) return j;
-      if (j && j.code !== 'sesion') UI.toast(j.error || 'No se pudo completar la acción.');
+      if (j && j.code !== 'sesion') { ultErr = j.error || 'No se pudo completar la acción.'; UI.toast(ultErr); } else ultErr = 'La sesión caducó: vuelve a entrar.';
       return null;
-    } catch { UI.toast('Sin conexión con el servidor de usuarios.'); return null; }
+    } catch { ultErr = 'Sin conexión con el servidor de usuarios.'; UI.toast(ultErr); return null; }
   }
+  /** Las llamadas salen de una en una, en el orden de los clics: el servidor de Google atiende una petición a la vez y cada una espera su turno como máximo 20 s; con varias a la vez las últimas se perdían y el orden de llegada podía cambiar. */
+  function llamar(accion, datos) { const p = colaU.then(() => llamarYa(accion, datos)); colaU = p.catch(() => {}); return p; }
 
   function abrir() {
     if (!puede()) { UI.toast('No tienes permiso para administrar usuarios.'); return; }
@@ -2209,6 +2212,7 @@ function initAdminUsuarios() {
   $('usrForm').onsubmit = e => e.preventDefault();      // Enter dentro de los campos no debe cerrar el diálogo
 
   async function cargar() {
+    await vaciarForms();   // antes de redibujar, lo que se eligió en las casillas debe estar guardado
     if (cargando) return; cargando = true;
     const sc = $('usrDlg').querySelector('.usrwrap'), y = sc ? sc.scrollTop : 0;
     const j = await llamar('usr_listar', {});
@@ -2225,6 +2229,33 @@ function initAdminUsuarios() {
   const idsDe = u => u.modulos === 'ninguno' ? [] : (u.modulos && u.modulos !== 'todos') ? u.modulos.split(',') : forms.map(f => f.id);
   const planDe = u => u.planificacion !== false;   // registro de la planificación (según lo planificado / diferente): vacío = habilitado
   const resumenForms = (ids, plan) => (ids.length === forms.length && plan) ? 'Todo' : (!ids.length && !plan) ? 'Ninguno' : (!ids.length ? 'Solo planificación' : ids.length + ' de ' + forms.length + (plan ? ' + planif.' : ''));
+  /* CASILLAS DE FORMULARIOS. Cada casilla no manda su propia petición: se espera un instante a que termines de marcar (o a que cierres la lista) y se guarda UNA vez
+   * el estado final; si aún hay un guardado en curso, al terminar se manda el estado más reciente. La pantalla nunca se revierte sola: si algo falla, se avisa y se vuelve a leer del servidor. */
+  const pendF = {};
+  const estadoDet = det => ({ids: [...det.querySelectorAll('input.um:checked')].map(i => i.value), plan: det.querySelector('input.up').checked});
+  function programarForms(u, det) { const p = pendF[u.usuario] = pendF[u.usuario] || {}; p.det = det; clearTimeout(p.t); p.t = setTimeout(() => lanzarForms(u, p), 600); }
+  function lanzarForms(u, p) {
+    clearTimeout(p.t); p.t = null;
+    if (p.vuelo) { p.otra = true; return p.prom; }
+    p.vuelo = true;
+    p.prom = (async () => {
+      let fallo = '';
+      do {
+        p.otra = false; const {ids, plan} = estadoDet(p.det), valor = valorForms(ids);
+        const j = await llamar('usr_editar', {usuario: u.usuario, formularios: valor, planificacion: plan});   // se puede dejar sin ningún formulario y/o sin registro de planificación
+        if (j) { u.modulos = valor === 'todos' ? 'todos' : (ids.length ? ids.join(',') : 'ninguno'); u.planificacion = plan; } else fallo = ultErr || 'No se pudo guardar.';
+      } while (p.otra);
+      p.vuelo = false;
+      if (fallo) { UI.toast(`No se guardaron los permisos de ${u.usuario}: ${fallo}`); cargar(); }
+      else { const {ids, plan} = estadoDet(p.det); UI.toast(`Permisos de ${u.usuario}: ${resumenForms(ids, plan)}`); }
+    })();
+    return p.prom;
+  }
+  async function vaciarForms() {   // guarda ya lo que esté esperando y espera a que termine todo lo que está en curso
+    const ps = [];
+    Object.entries(pendF).forEach(([k, p]) => { if (p.t) { const u = lista.find(x => x.usuario === k); if (u) lanzarForms(u, p); else { clearTimeout(p.t); p.t = null; } } if (p.vuelo && p.prom) ps.push(p.prom); });
+    await Promise.all(ps);
+  }
   function celdaForms(u) {   // desplegable con una casilla por formulario (no aplica a "Consulta": ese rol no registra nada)
     if (u.rol === 'Consulta') return '<span class="admsub" style="margin:0">no aplica</span>';
     const sel = idsDe(u), plan = planDe(u);
@@ -2327,13 +2358,17 @@ function initAdminUsuarios() {
       if (!j) e.target.value = u.ficha || ''; else UI.toast(ficha ? `Ficha de ${u.usuario}: ${ficha}` : `${u.usuario}: sin ficha`);
       cargar();
     } else if (e.target.classList.contains('um') || e.target.classList.contains('up')) {
-      const det = e.target.closest('details'), ids = [...det.querySelectorAll('input.um:checked')].map(i => i.value), plan = det.querySelector('input.up').checked;
-      const valor = valorForms(ids), j = await llamar('usr_editar', {usuario: u.usuario, formularios: valor, planificacion: plan});   // se puede dejar sin ningún formulario y/o sin registro de planificación
-      if (!j) { const prev = idsDe(u); det.querySelectorAll('input.um').forEach(i => { i.checked = prev.includes(i.value); }); det.querySelector('input.up').checked = planDe(u); return; }
-      u.modulos = valor === 'todos' ? 'todos' : (ids.length ? ids.join(',') : 'ninguno'); u.planificacion = plan; det.querySelector('summary').textContent = resumenForms(ids, plan);   // sin redibujar la tabla: el desplegable sigue abierto
-      UI.toast(`Permisos de ${u.usuario}: ${resumenForms(ids, plan)}`);
+      const det = e.target.closest('details'), est = estadoDet(det);
+      det.querySelector('summary').textContent = resumenForms(est.ids, est.plan);   // se ve al instante; el guardado se agrupa (sin redibujar la tabla: el desplegable sigue abierto)
+      programarForms(u, det);
     }
   });
+  $('usrT').addEventListener('toggle', e => {   // al cerrar la lista de formularios se guarda sin esperar
+    if (!e.target.matches || !e.target.matches('details.mods') || e.target.open) return;
+    const tr = e.target.closest('tr[data-u]'), u = tr && lista.find(x => x.usuario === tr.dataset.u), p = u && pendF[u.usuario]; if (p && p.t) lanzarForms(u, p);
+  }, true);
+  $('usrDlg').addEventListener('close', () => { vaciarForms(); });
+  document.addEventListener('visibilitychange', () => { if (document.hidden) vaciarForms(); });
   $('usrT').addEventListener('keydown', e => { if (e.key === 'Enter' && e.target.classList.contains('un')) { e.preventDefault(); e.target.blur(); } });
   $('usrT').addEventListener('click', async e => {
     const b = e.target.closest('button'); if (!b) return; const u = fila(b); if (!u) return;
@@ -2359,7 +2394,7 @@ function initAdminUsuarios() {
 function initAdminMaestros() {
   const $ = id => document.getElementById(id), A = App, esc = A.esc;
   const puede = () => A.auth.puede('maestros_admin');
-  let datos = null, tabla = 'zafras', cargando = false;
+  let datos = null, tabla = 'zafras', cargando = false, corriendo = false, ultErr = '';
   const aviso = (t, bien) => { const el = $('mstMsg'); el.textContent = t || ''; el.dataset.ok = bien ? '1' : ''; };
 
   /** Llama al servidor. Devuelve la respuesta si ok; si no, muestra el motivo y devuelve null (y la tabla se actualiza si hubo un conflicto). */
@@ -2367,9 +2402,10 @@ function initAdminMaestros() {
     try {
       const j = await A.api(accion, d);
       if (j && j.ok) return j;
-      if (j && j.code !== 'sesion') { aviso(j.error || 'No se pudo completar la acción.'); if (j.code === 'conflicto') cargar(); }
+      if (j && j.code !== 'sesion') { ultErr = j.error || 'No se pudo completar la acción.'; aviso(ultErr); if (j.code === 'conflicto' && !corriendo) cargar(); }
+      else ultErr = 'La sesión caducó: vuelve a entrar.';
       return null;
-    } catch { aviso('Sin conexión con el servidor.'); return null; }
+    } catch { ultErr = 'Sin conexión con el servidor.'; aviso(ultErr); return null; }
   }
   function abrir() {
     if (!puede()) { UI.toast('No tienes permiso para editar los maestros.'); return; }
@@ -2389,9 +2425,10 @@ function initAdminMaestros() {
   }
   function restaurarBorradores(b, soltar) {
     if (!b) return;
-    if (b.nueva && soltar !== 'nueva') { const tn = document.querySelector('#mstT tr.mnew'); if (tn) Object.entries(b.nueva).forEach(([k, v]) => { const i = tn.querySelector(`[data-k="${k}"]`); if (i) i.value = v; }); }
+    const sol = Array.isArray(soltar) ? soltar : [soltar];
+    if (b.nueva && !sol.includes('nueva')) { const tn = document.querySelector('#mstT tr.mnew'); if (tn) Object.entries(b.nueva).forEach(([k, v]) => { const i = tn.querySelector(`[data-k="${k}"]`); if (i) i.value = v; }); }
     document.querySelectorAll('#mstT tr[data-f]').forEach(tr => {
-      const v = b.filas[tr.dataset.antes]; if (!v || tr.dataset.antes === soltar) return;
+      const v = b.filas[tr.dataset.antes]; if (!v || sol.includes(tr.dataset.antes)) return;
       Object.entries(v).forEach(([k, x]) => { const i = tr.querySelector(`[data-k="${k}"]`); if (i) i.value = x; });
       tr.querySelector('.mgu').disabled = false; tr.classList.add('sucia');
     });
@@ -2402,7 +2439,7 @@ function initAdminMaestros() {
     const j = await llamar('mae_listar', {});
     cargando = false; if (!j) return;
     datos = j; if (!datos.tablas[tabla]) tabla = datos.orden[0];
-    pintarTabs(); pintar(); restaurarBorradores(borr, soltar); if (sc) sc.scrollTop = y;
+    pintarTabs(); pintar(); restaurarBorradores(borr, soltar); actualizarTodo(); if (sc) sc.scrollTop = y;
   }
   const inactiva = (t, r) => { const i = t.cols.findIndex(c => c.k === 'activo'); return i >= 0 && ['no', 'inactivo', 'inactiva', 'false', '0'].includes(String(r.v[i] == null ? '' : r.v[i]).trim().toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '')); };
   const avisoAts = j => !j.ats ? '' : j.ats.error ? ` PERO la hoja Administrador del ATS NO se pudo actualizar: ${j.ats.error}` : (j.ats.agregadas || j.ats.actualizadas) ? ' La hoja del ATS se actualizó sola.' : '';
@@ -2446,22 +2483,55 @@ function initAdminMaestros() {
   $('mstTabs').onclick = e => { const b = e.target.closest('button[data-t]'); if (!b) return; tabla = b.dataset.t; aviso(''); $('mstQ').value = ''; pintarTabs(); pintar(); };   // (los borradores sin guardar de la otra tabla se descartan al cambiar de pestaña)
   $('mstQ').oninput = () => { if (datos) pintar(); };
   $('mstOcIn').onchange = () => { if (datos) pintar(); };
-  $('mstT').addEventListener('input', e => { const tr = e.target.closest('tr[data-f]'); if (!tr) return; const b = tr.querySelector('.mgu'); b.disabled = false; tr.classList.add('sucia'); });
+  $('mstT').addEventListener('input', e => { const tr = e.target.closest('tr[data-f]'); if (!tr || tr.classList.contains('guardando')) return; const b = tr.querySelector('.mgu'); b.disabled = false; tr.classList.add('sucia'); actualizarTodo(); });
+  const actualizarTodo = () => { const n = document.querySelectorAll('#mstT tr.sucia[data-f]:not(.guardando)').length; $('mstTodo').hidden = n < 2; $('mstTodo').textContent = `Guardar todo (${n})`; };
   $('mstT').addEventListener('keydown', e => { if (e.key !== 'Enter' || !e.target.matches('[data-k]')) return; e.preventDefault(); const tr = e.target.closest('tr'); const b = tr.querySelector('.mag, .mgu:not([disabled])'); if (b) b.click(); });
+  /* COLA DE GUARDADOS. Cada clic en Guardar / Agregar / Eliminar entra en una cola que se atiende de uno en uno, en el orden de los clics
+   * (el servidor de Google atiende una petición a la vez y cada una espera su turno como máximo 20 s: con muchas a la vez, las últimas se perdían).
+   * La tabla se vuelve a leer UNA sola vez, cuando la cola se vacía; lo escrito y no guardado en otras filas se conserva. */
+  const ops = []; let res = {ok: 0, mal: 0, soltar: [], ats: null, atsOk: false, errs: [], tipos: [], titulo: ''};
+  function encolar(op) {
+    op.tr.classList.add('guardando'); op.tr.querySelectorAll('button, input, select').forEach(x => { x.disabled = true; });
+    ops.push(op); aviso(`Guardando… ${ops.length} en cola`, true); actualizarTodo(); if (!corriendo) correr();
+  }
+  async function correr() {
+    corriendo = true;
+    while (ops.length) {
+      const op = ops.shift(); aviso(`Guardando… (${res.ok + res.mal + 1} de ${res.ok + res.mal + 1 + ops.length})`, true);
+      const j = await llamar(op.accion, op.datos());
+      if (j) {
+        res.ok++; res.soltar.push(op.soltar); res.tipos.push(op.tipo); res.titulo = op.titulo;
+        if (j.ats) { if (j.ats.error) res.ats = j.ats.error; else if (j.ats.agregadas || j.ats.actualizadas) res.atsOk = true; }
+        if (op.accion === 'mae_eliminar') ops.forEach(o => { if (o.fila > op.fila) o.fila--; });   // al eliminar una fila, las de abajo suben una
+      } else { res.mal++; res.errs.push(ultErr); }
+    }
+    const r = res; res = {ok: 0, mal: 0, soltar: [], ats: null, atsOk: false, errs: [], tipos: [], titulo: ''}; corriendo = false;
+    await cargar(r.soltar);   // una sola recarga cuando la cola queda vacía
+    const nota = r.ats ? ` PERO la hoja Administrador del ATS NO se pudo actualizar: ${r.ats}` : r.atsOk ? ' La hoja del ATS se actualizó sola.' : '';
+    if (r.ok === 1 && !r.mal) { const tp = r.tipos[0]; UI.toast(`${r.titulo}: ${tp === 'agregar' ? 'agregado' : tp === 'eliminar' ? 'eliminado' : 'guardado'}`); aviso((tp === 'agregar' ? 'Agregado ✓ Los formularios ya lo ven.' : tp === 'eliminar' ? 'Eliminado ✓' : 'Guardado ✓ Los formularios ya lo ven.') + nota, !r.ats); }
+    else if (r.ok && !r.mal) { UI.toast(`${r.titulo}: ${r.ok} cambios guardados`); aviso(`Guardados ${r.ok} cambios ✓ Los formularios ya lo ven.` + nota, !r.ats); }
+    else if (r.ok) aviso(`Guardados ${r.ok} ✓ pero ${r.mal} con error: ${r.errs[0]} (las filas con error siguen marcadas para que las reintentes).` + nota, false);
+    else aviso(`No se guardó (${r.mal}): ${r.errs[0] || 'error desconocido'}`, false);
+  }
+  const opGuardar = (tr, t) => { const vals = valores(tr), antes = JSON.parse(tr.dataset.antes), tb = tabla; return {accion: 'mae_guardar', tipo: 'guardar', tr, titulo: t.titulo, soltar: tr.dataset.antes, fila: +tr.dataset.f, datos() { return {tabla: tb, fila: this.fila, antes, valores: vals}; }}; };
   $('mstT').addEventListener('click', async e => {
-    const b = e.target.closest('button'); if (!b) return; const tr = b.closest('tr'), t = datos.tablas[tabla];
+    const b = e.target.closest('button'); if (!b || b.disabled) return; const tr = b.closest('tr'), t = datos.tablas[tabla], tb = tabla;
     if (b.classList.contains('mag')) {                                   // agregar
-      b.disabled = true; aviso(''); const j = await llamar('mae_guardar', {tabla, valores: valores(tr)}); b.disabled = false;
-      if (j) { UI.toast(`${t.titulo}: agregado`); aviso('Agregado ✓ Los formularios ya lo ven.' + avisoAts(j), !(j.ats && j.ats.error)); await cargar('nueva'); }
+      const vals = valores(tr); aviso('');
+      encolar({accion: 'mae_guardar', tipo: 'agregar', tr, titulo: t.titulo, soltar: 'nueva', fila: 0, datos() { return {tabla: tb, valores: vals}; }});
     } else if (b.classList.contains('mgu')) {                            // guardar cambios de una fila
-      b.disabled = true; aviso(''); const j = await llamar('mae_guardar', {tabla, fila: +tr.dataset.f, antes: JSON.parse(tr.dataset.antes), valores: valores(tr)});
-      if (j) { UI.toast(`${t.titulo}: guardado`); aviso('Guardado ✓ Los formularios ya lo ven.' + avisoAts(j), !(j.ats && j.ats.error)); await cargar(tr.dataset.antes); } else b.disabled = false;
+      aviso(''); encolar(opGuardar(tr, t));
     } else if (b.classList.contains('mel')) {                            // eliminar
       const antes = JSON.parse(tr.dataset.antes), nom = antes.filter(x => x !== '').join(' · ');
-      if (!confirm(`¿Eliminar "${nom}" de ${t.titulo}?\n\nLos registros ya guardados conservan su valor, pero esta opción dejará de aparecer para elegirla en los formularios.${tabla === 'administradores' ? '\n\nSu ficha se queda en la hoja del ATS para que los registros viejos conserven el nombre. Si solo quieres que deje de aparecer en los formularios, mejor márcala Activo = No.' : ''}`)) return;
-      aviso(''); const j = await llamar('mae_eliminar', {tabla, fila: +tr.dataset.f, antes}); if (j) { UI.toast(`${t.titulo}: eliminado`); aviso('Eliminado ✓', true); await cargar(tr.dataset.antes); }
+      if (!confirm(`¿Eliminar \"${nom}\" de ${t.titulo}?\n\nLos registros ya guardados conservan su valor, pero esta opción dejará de aparecer para elegirla en los formularios.${tabla === 'administradores' ? '\n\nSu ficha se queda en la hoja del ATS para que los registros viejos conserven el nombre. Si solo quieres que deje de aparecer en los formularios, mejor márcala Activo = No.' : ''}`)) return;
+      aviso(''); encolar({accion: 'mae_eliminar', tipo: 'eliminar', tr, titulo: t.titulo, soltar: tr.dataset.antes, fila: +tr.dataset.f, datos() { return {tabla: tb, fila: this.fila, antes}; }});
     }
   });
+  $('mstTodo').onclick = e => {   // guarda de una vez todas las filas con cambios, en el orden en que aparecen
+    e.preventDefault(); const t = datos.tablas[tabla]; aviso('');
+    document.querySelectorAll('#mstT tr.sucia[data-f]:not(.guardando)').forEach(tr => encolar(opGuardar(tr, t)));
+  };
+
   $('mstTraer').onclick = async e => {   // trae de las hojas de camionetas (zafra más reciente) las camionetas que aún no están en Equipos
     e.preventDefault(); const tr = datos.traer;
     if (!confirm(`De las hojas de camionetas (zafra ${tr.zafra}) se agregarán a Equipos, con categoría Camionetas:\n\n${tr.equipos.join(', ')}\n\nDespués puedes corregir o quitar lo que no corresponda.\n(Los supervisores se agregan en Personal, porque necesitan ficha.)`)) return;
@@ -2672,14 +2742,13 @@ FORM.combustible = {
     ${campo('¿Qué se abasteció?', segHTML('tipo', [['planta', 'Planta / Cisterna'], ['moto', 'Moto']]), '', '', 'full')}
     ${cabeceraComun()}
     <div id="cbPlanta"><div class="fila">${campo('Cisterna', '<select name="cisterna"></select>')}${campo('Planta / motor', '<select name="motorPlanta"></select>')}</div>${campo('Conductor de la cisterna', selHTML('condCis', 'Buscar por ficha o nombre'))}</div>
-    <div id="cbMoto" hidden>${campo('Moto', '<select name="motorMoto"></select>')}${campo('Quién la abasteció', selHTML('condMoto', 'Buscar por ficha o nombre'))}${campo('Abastecida desde', '<select name="origen"></select>', 'Normalmente la misma moto; cámbialo si la cargó otra unidad.')}</div>
+    <div id="cbMoto" hidden>${campo('Moto', '<select name="motorMoto"></select>')}${campo('Quién la abasteció', selHTML('condMoto', 'Buscar por ficha o nombre'))}</div>
     <div class="fila">${campo('Cantidad (litros)', '<input type="number" name="litros" inputmode="decimal" step="any" min="0">')}<div id="cbOdo">${campo('Odómetro', '<input type="number" name="odometro" inputmode="decimal" step="any" min="0">', '', 'cbOdoAy')}</div></div>
     <button class="btn" id="cbGo" type="submit">Guardar registro</button></form></div></div>`,
   montar(root, datos) {
     cab(root, 'combustible'); zafraSel(root);
     $('[name=cisterna]', root).innerHTML = opcSelect(S.mae.equipos.Cisternas, 'Cisterna'); $('[name=motorPlanta]', root).innerHTML = opcSelect(S.mae.equipos.Plantas, 'Planta');
     $('[name=motorMoto]', root).innerHTML = opcSelect(S.mae.equipos.Motos, 'Moto');
-    $('[name=origen]', root).innerHTML = '<option value="">La misma moto</option>' + [...S.mae.equipos.Motos, ...S.mae.equipos.Cisternas].map(e => `<option>${esc(e)}</option>`).join('');
     const cc = (S.mae.operadores['Operador Cisterna'] || []).map(o => ({valor: o.id, texto: o.text, sub: 'ficha ' + o.id}));
     const cm = [...(S.mae.operadores['Operador Moto'] || []).map(o => ({valor: o.id, texto: o.text, sub: 'ficha ' + o.id})), ...S.mae.administradores.map(a => ({valor: String(a.id), texto: a.text, sub: 'ficha ' + a.id + ' · ' + (a.puesto === 'Supervisor' ? 'supervisor' : 'administrador')}))];
     bindSel(root, 'condCis', 'Conductor de la cisterna', () => cc, null, libreFicha); bindSel(root, 'condMoto', 'Quién abasteció la moto', () => cm, null, libreFicha);
@@ -2695,7 +2764,7 @@ FORM.combustible = {
   set(root, d) {
     segSet(root, 'tipo', d.tipo); $('[name=zafra]', root).value = d.zafra; $('[name=fecha]', root).value = d.fecha; segSet(root, 'turno', d.turno); $('[name=litros]', root).value = d.litros;
     const cond = String(d.conductor), tx = id => { const o = operadorPorId(cond) || adminPorId(cond); return o ? o.text : cond; };
-    if (d.tipo === 'moto') { $('#cbPlanta', root).hidden = true; $('#cbMoto', root).hidden = false; $('#cbOdo', root).hidden = false; $('[name=motorMoto]', root).value = d.motor; $('[name=origen]', root).value = d.cisterna && d.cisterna !== d.motor ? d.cisterna : ''; $('[name=odometro]', root).value = d.odometro; selSet(root, 'condMoto', cond, tx()); }
+    if (d.tipo === 'moto') { $('#cbPlanta', root).hidden = true; $('#cbMoto', root).hidden = false; $('#cbOdo', root).hidden = false; $('[name=motorMoto]', root).value = d.motor; $('[name=odometro]', root).value = d.odometro; selSet(root, 'condMoto', cond, tx()); }
     else { $('#cbPlanta', root).hidden = false; $('#cbMoto', root).hidden = true; $('#cbOdo', root).hidden = true; $('[name=cisterna]', root).value = d.cisterna; $('[name=motorPlanta]', root).value = d.motor; selSet(root, 'condCis', cond, tx()); }
   },
   async enviar(root) {
@@ -2704,7 +2773,7 @@ FORM.combustible = {
     const d = {tipo, zafra: g('zafra').value, fecha: g('fecha').value, turno: segGet(root, 'turno'), litros: lit};
     mk(g('fecha'), !d.fecha, 'Falta la fecha.'); mk(g('zafra'), !d.zafra, 'Falta la zafra.');
     if (tipo === 'moto') {
-      d.motor = g('motorMoto').value; d.cisterna = g('origen').value || d.motor; d.conductor = selGet(root, 'condMoto').valor; d.odometro = parseFloat(g('odometro').value);
+      d.motor = g('motorMoto').value; d.cisterna = d.motor; d.conductor = selGet(root, 'condMoto').valor; d.odometro = parseFloat(g('odometro').value);
       mk(g('motorMoto'), !d.motor, 'Elige la moto.'); mk($('[data-sel=condMoto]', root), !d.conductor, 'Elige quién abasteció la moto.'); mk(g('odometro'), !(d.odometro > 0), 'Escribe el odómetro de la moto.');
       if (lit > AVISOS.litrosMoto[1]) av.push(`${lit} litros es mucho para una moto (lo normal es hasta ${AVISOS.litrosMoto[1]}).`);
       const u = S.odo[d.motor]; if (u && d.odometro > 0) { if (d.odometro < u) av.push(`El odómetro (${d.odometro}) es menor que el último registrado (${u}).`); else if (d.odometro - u > AVISOS.odoSalto) av.push(`El odómetro avanzó ${fmt(d.odometro - u)} km desde el último registro (${u}). ¿Es correcto?`); }

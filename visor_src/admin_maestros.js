@@ -51,11 +51,12 @@ function initAdminMaestros() {
     pintarTabs(); pintar(); restaurarBorradores(borr, soltar); if (sc) sc.scrollTop = y;
   }
   const inactiva = (t, r) => { const i = t.cols.findIndex(c => c.k === 'activo'); return i >= 0 && ['no', 'inactivo', 'inactiva', 'false', '0'].includes(String(r.v[i] == null ? '' : r.v[i]).trim().toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '')); };
+  const avisoAts = j => !j.ats ? '' : j.ats.error ? ` PERO la hoja Administrador del ATS NO se pudo actualizar: ${j.ats.error}` : (j.ats.agregadas || j.ats.actualizadas) ? ' La hoja del ATS se actualizó sola.' : '';
   const nInact = t => t.ok ? t.filas.filter(r => inactiva(t, r)).length : 0;
   function pintarTabs() {
-    $('mstTabs').innerHTML = datos.orden.map(k => { const t = datos.tablas[k], aten = k === 'ats_admin' && datos.faltanAts.length;
-      const tr = datos.traer || {equipos: [], supervisores: []}, falta = (k === 'equipos' && tr.equipos.length) || (k === 'supervisores' && tr.supervisores.length), faltaP = k === 'administradores' && (datos.sinPuesto || (datos.faltanMaestro || []).length);
-      return `<button type="button" role="tab" data-t="${k}" class="${k === tabla ? 'on' : ''}" aria-selected="${k === tabla}">${esc(t.titulo)} <small>${t.ok ? t.filas.length : '!'}${nInact(t) ? ' · ' + nInact(t) + ' inact.' : ''}</small>${aten ? '<span class="mw" title="Faltan fichas">⚠</span>' : ''}${falta ? '<span class="mw" title="Hay camionetas o supervisores en las hojas que aún no están aquí">⚠</span>' : ''}${faltaP ? '<span class="mw" title="Faltan puestos o fichas del ATS">⚠</span>' : ''}</button>`; }).join('');
+    $('mstTabs').innerHTML = datos.orden.map(k => { const t = datos.tablas[k];
+      const tr = datos.traer || {equipos: [], supervisores: []}, falta = k === 'equipos' && tr.equipos.length, faltaP = k === 'administradores' && (datos.sinPuesto || (datos.faltanMaestro || []).length || tr.supervisores.length);
+      return `<button type="button" role="tab" data-t="${k}" class="${k === tabla ? 'on' : ''}" aria-selected="${k === tabla}">${esc(t.titulo)} <small>${t.ok ? t.filas.length : '!'}${nInact(t) ? ' · ' + nInact(t) + ' inact.' : ''}</small>${falta ? '<span class="mw" title="Hay camionetas en las hojas que aún no están aquí">⚠</span>' : ''}${faltaP ? '<span class="mw" title="Faltan puestos, fichas o supervisores por agregar">⚠</span>' : ''}</button>`; }).join('');
   }
   // un control por tipo de dato (el servidor vuelve a validar todo)
   function control(c, v, id) {
@@ -68,19 +69,17 @@ function initAdminMaestros() {
   function pintar() {
     const t = datos.tablas[tabla], q = $('mstQ').value.trim().toLowerCase();
     let notaTxt = t.nota || '';
-    if (tabla === 'administradores') {   // lo que falta completar en las personas: puesto y fichas que sólo están en el ATS
-      const x = [], fm = datos.faltanMaestro || [];
+    if (tabla === 'administradores') {   // lo que falta completar en el personal: puesto, fichas que sólo están en el ATS y supervisores de las hojas de camionetas
+      const x = [], fm = datos.faltanMaestro || [], sp = (datos.traer && datos.traer.supervisores) || [];
       if (datos.sinPuesto) x.push(`${datos.sinPuesto} persona(s) sin puesto (mientras tanto cuentan como Administrador de frente).`);
       if (fm.length) x.push('Están en la hoja del ATS pero no aquí: ' + fm.map(p => p.id + ' ' + p.texto).join(', ') + '. Agrégalas con su puesto.');
+      if (sp.length) x.push('Aparecen como supervisores en las hojas de camionetas (zafra ' + datos.traer.zafra + ') pero no están aquí con puesto Supervisor: ' + sp.join(', ') + '.');
       notaTxt = [notaTxt].concat(x).join(' ');
     }
     $('mstNota').textContent = notaTxt;
-    const falta = datos.faltanAts.length, mostrarAts = (tabla === 'administradores' || tabla === 'ats_admin') && falta > 0;
-    $('mstAts').hidden = !mostrarAts; $('mstAts').textContent = `Completar el ATS (${falta} ficha${falta === 1 ? '' : 's'} faltan)`;
-    $('mstAts').title = mostrarAts ? 'Faltan en la hoja del ATS: ' + datos.faltanAts.map(x => x.id + ' ' + x.texto).join(', ') : '';
-    const tr = datos.traer || {equipos: [], supervisores: []}, nTr = tr.equipos.length + tr.supervisores.length, mostrarTr = (tabla === 'equipos' || tabla === 'supervisores') && nTr > 0;
-    $('mstTraer').hidden = !mostrarTr; $('mstTraer').textContent = `Traer de las hojas de camionetas (${tr.equipos.length} camioneta${tr.equipos.length === 1 ? '' : 's'}, ${tr.supervisores.length} supervisor${tr.supervisores.length === 1 ? '' : 'es'})`;
-    $('mstTraer').title = mostrarTr ? `De la zafra ${tr.zafra}: ${tr.equipos.join(', ') || '—'} · ${tr.supervisores.join(', ') || '—'}` : '';
+    const tr = datos.traer || {equipos: [], supervisores: []}, mostrarTr = tabla === 'equipos' && tr.equipos.length > 0;
+    $('mstTraer').hidden = !mostrarTr; $('mstTraer').textContent = `Traer de las hojas de camionetas (${tr.equipos.length} camioneta${tr.equipos.length === 1 ? '' : 's'})`;
+    $('mstTraer').title = mostrarTr ? `De la zafra ${tr.zafra}: ${tr.equipos.join(', ')}` : '';
     if (!t.ok) { $('mstH').innerHTML = ''; $('mstT').innerHTML = `<tr><td style="color:var(--amber);padding:10px">${esc(t.error || 'Esta tabla no está disponible.')}</td></tr>`; $('mstCnt').textContent = ''; return; }
     $('mstH').innerHTML = `<tr>${t.cols.map(c => `<th>${esc(c.t)}${c.opc ? ' <span class="admsub" style="margin:0">(opcional)</span>' : ''}</th>`).join('')}<th>Fila</th><th></th></tr>`;
     const tieneAct = t.cols.some(c => c.k === 'activo'), ocIn = tieneAct && $('mstOcIn').checked; $('mstOcInL').hidden = !tieneAct;
@@ -99,24 +98,19 @@ function initAdminMaestros() {
     const b = e.target.closest('button'); if (!b) return; const tr = b.closest('tr'), t = datos.tablas[tabla];
     if (b.classList.contains('mag')) {                                   // agregar
       b.disabled = true; aviso(''); const j = await llamar('mae_guardar', {tabla, valores: valores(tr)}); b.disabled = false;
-      if (j) { UI.toast(`${t.titulo}: agregado`); aviso('Agregado ✓ Los formularios ya lo ven.', true); await cargar('nueva'); }
+      if (j) { UI.toast(`${t.titulo}: agregado`); aviso('Agregado ✓ Los formularios ya lo ven.' + avisoAts(j), !(j.ats && j.ats.error)); await cargar('nueva'); }
     } else if (b.classList.contains('mgu')) {                            // guardar cambios de una fila
       b.disabled = true; aviso(''); const j = await llamar('mae_guardar', {tabla, fila: +tr.dataset.f, antes: JSON.parse(tr.dataset.antes), valores: valores(tr)});
-      if (j) { UI.toast(`${t.titulo}: guardado`); aviso('Guardado ✓ Los formularios ya lo ven.', true); await cargar(tr.dataset.antes); } else b.disabled = false;
+      if (j) { UI.toast(`${t.titulo}: guardado`); aviso('Guardado ✓ Los formularios ya lo ven.' + avisoAts(j), !(j.ats && j.ats.error)); await cargar(tr.dataset.antes); } else b.disabled = false;
     } else if (b.classList.contains('mel')) {                            // eliminar
       const antes = JSON.parse(tr.dataset.antes), nom = antes.filter(x => x !== '').join(' · ');
-      if (!confirm(`¿Eliminar "${nom}" de ${t.titulo}?\n\nLos registros ya guardados conservan su valor, pero esta opción dejará de aparecer para elegirla en los formularios.${tabla === 'ats_admin' ? '\n\nLos registros ATS ya guardados de esa ficha mostrarán #N/A en su columna Administrador.' : ''}`)) return;
+      if (!confirm(`¿Eliminar "${nom}" de ${t.titulo}?\n\nLos registros ya guardados conservan su valor, pero esta opción dejará de aparecer para elegirla en los formularios.${tabla === 'administradores' ? '\n\nSu ficha se queda en la hoja del ATS para que los registros viejos conserven el nombre. Si solo quieres que deje de aparecer en los formularios, mejor márcala Activo = No.' : ''}`)) return;
       aviso(''); const j = await llamar('mae_eliminar', {tabla, fila: +tr.dataset.f, antes}); if (j) { UI.toast(`${t.titulo}: eliminado`); aviso('Eliminado ✓', true); await cargar(tr.dataset.antes); }
     }
   });
-  $('mstTraer').onclick = async e => {   // trae de las hojas de camionetas (zafra más reciente) lo que aún no está en los maestros
+  $('mstTraer').onclick = async e => {   // trae de las hojas de camionetas (zafra más reciente) las camionetas que aún no están en Equipos
     e.preventDefault(); const tr = datos.traer;
-    if (!confirm(`De las hojas de camionetas (zafra ${tr.zafra}) se agregarán a los maestros:\n\nCamionetas (Equipos): ${tr.equipos.join(', ') || '—'}\nSupervisores: ${tr.supervisores.join(', ') || '—'}\n\nDespués puedes corregir o quitar lo que no corresponda.`)) return;
-    const j = await llamar('mae_traer', {}); if (j) { UI.toast(`Se agregaron ${j.equipos} camioneta(s) y ${j.supervisores} supervisor(es)`); aviso(`Listo: ${j.equipos} camioneta(s) y ${j.supervisores} supervisor(es) agregados ✓`, true); await cargar(); }
-  };
-  $('mstAts').onclick = async e => {
-    e.preventDefault(); const n = datos.faltanAts.length;
-    if (!confirm(`Se agregarán a la hoja "Administrador" del ATS ${n} ficha(s) que están en Administradores y aún no están ahí:\n\n${datos.faltanAts.map(x => x.id + ' ' + x.texto).join('\n')}`)) return;
-    const j = await llamar('mae_sync_ats', {}); if (j) { UI.toast(`ATS: ${j.agregadas} ficha(s) agregada(s)`); aviso(`Listo: ${j.agregadas} ficha(s) agregada(s) al ATS ✓`, true); await cargar(); }
+    if (!confirm(`De las hojas de camionetas (zafra ${tr.zafra}) se agregarán a Equipos, con categoría Camionetas:\n\n${tr.equipos.join(', ')}\n\nDespués puedes corregir o quitar lo que no corresponda.\n(Los supervisores se agregan en Personal, porque necesitan ficha.)`)) return;
+    const j = await llamar('mae_traer', {}); if (j) { UI.toast(`Se agregaron ${j.equipos} camioneta(s)`); aviso(`Listo: ${j.equipos} camioneta(s) agregadas ✓`, true); await cargar(); }
   };
 }

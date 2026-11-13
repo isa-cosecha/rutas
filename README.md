@@ -179,3 +179,11 @@ Las de los vecinos se achican y se vuelven más translúcidas cuanto más lejos 
 - `initMap` en `core.js`: **Satélite (Esri)** (por defecto), **Google Satellite** (`mt1.google.com/vt/lyrs=s`, `maxNativeZoom` 20; se quita con `CAPA_GOOGLE = false`) y **Calles (OSM)** (`maxNativeZoom` 19), más la capa superpuesta **Nombres**. El orden de las capas lo da el selector (`autoZIndex`), por lo que Nombres queda siempre encima.
 - La última capa se guarda en `localStorage` (`rp26_base`); sin conexión (`navigator.onLine === false`) se ignora y se usa Esri.
 - El service worker solo intercepta y guarda teselas de `server.arcgisonline.com` (`HOST_TESELAS`): las de Google van directo a la red y no se almacenan.
+
+## Una sola tabla de Personal (v14)
+
+- `MAESTROS_DEF` ya no tiene `supervisores` ni `ats_admin`. La tabla `administradores` (hoja `Administradores`) se muestra como **Personal**. `ATS_ADMIN_DEF` describe la hoja *Administrador* del libro ATS, que solo se toca desde `sincronizarAts_()`.
+- `maestros_()`: `administradores` y `supervisores` salen de Personal (`supervisores` = activos con puesto `Supervisor`, sin repetir por `normNombre_`). `MAESTROS_V = 14`.
+- `sincronizarAts_()` agrega las fichas que falten y corrige el nombre solo si Personal trae `completo`; `sincAtsSeguro_()` la llama tras `mae_guardar` de Personal y devuelve `ats: {agregadas, actualizadas, error?}` sin hacer fallar el guardado. `mae_sync_ats` queda como acción manual.
+- `supEnLista_()` valida los supervisores de ATS y camionetas ("no está en Personal con puesto Supervisor" / "inactivo en Personal").
+- `mae_traer` solo agrega camionetas; `traer.supervisores` informa los supervisores de las hojas de camionetas que no están en Personal.

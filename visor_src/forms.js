@@ -209,7 +209,7 @@ FORM.combustible = {
     $('[name=motorMoto]', root).innerHTML = opcSelect(S.mae.equipos.Motos, 'Moto');
     $('[name=origen]', root).innerHTML = '<option value="">La misma moto</option>' + [...S.mae.equipos.Motos, ...S.mae.equipos.Cisternas].map(e => `<option>${esc(e)}</option>`).join('');
     const cc = (S.mae.operadores['Operador Cisterna'] || []).map(o => ({valor: o.id, texto: o.text, sub: 'ficha ' + o.id}));
-    const cm = [...(S.mae.operadores['Operador Moto'] || []).map(o => ({valor: o.id, texto: o.text, sub: 'ficha ' + o.id})), ...S.mae.administradores.map(a => ({valor: String(a.id), texto: a.text, sub: 'ficha ' + a.id + ' · administrador'}))];
+    const cm = [...(S.mae.operadores['Operador Moto'] || []).map(o => ({valor: o.id, texto: o.text, sub: 'ficha ' + o.id})), ...S.mae.administradores.map(a => ({valor: String(a.id), texto: a.text, sub: 'ficha ' + a.id + ' · ' + (a.puesto === 'Supervisor' ? 'supervisor' : 'administrador')}))];
     bindSel(root, 'condCis', 'Conductor de la cisterna', () => cc, null, libreFicha); bindSel(root, 'condMoto', 'Quién abasteció la moto', () => cm, null, libreFicha);
     const act = () => { const moto = segGet(root, 'tipo') === 'moto'; $('#cbPlanta', root).hidden = moto; $('#cbMoto', root).hidden = !moto; $('#cbOdo', root).hidden = !moto; hintOdo(); };
     const hintOdo = () => { const m = $('[name=motorMoto]', root).value, ay = $('#cbOdoAy', root); let h = $('.ayuda', ay); if (!h) { h = document.createElement('div'); h.className = 'ayuda'; ay.appendChild(h); } h.innerHTML = m && S.odo[m] ? `Último registrado: <b>${S.odo[m]}</b> km` : ''; };
@@ -301,7 +301,7 @@ function avisoCamionetas() {   // sin catálogos el formulario no puede funciona
   const f = [];
   if (!camionetas().length) f.push('No hay camionetas cargadas.');
   if (!supervisores().length) f.push('No hay supervisores cargados.');
-  return f.length ? `<div class="aviso">${f.join(' ')} El administrador debe cargarlas en <b>Mi cuenta → Administrar maestros</b> (Equipos con categoría Camionetas y Supervisores); el botón <i>Traer de las hojas de camionetas</i> las completa solo.</div>` : '';
+  return f.length ? `<div class="aviso">${f.join(' ')} El administrador debe cargarlas en <b>Mi cuenta → Administrar maestros</b>: las camionetas en <i>Equipos</i> (categoría Camionetas; el botón <i>Traer de las hojas de camionetas</i> las completa) y los supervisores en <i>Personal</i> (puesto Supervisor).</div>` : '';
 }
 function camComun(root, modulo) {   // supervisor, camioneta y último odómetro conocido (iguales en los dos formularios)
   cab(root, modulo); zafraSel(root);
@@ -465,7 +465,7 @@ FORM.ats = {
     bindSel(root, 'administrador', 'Administrador', () => soloAdmins().map(a => ({valor: String(a.id), texto: a.text, sub: 'ficha ' + a.id})), r => { if (!selGet(root, 'responsable').valor) selSet(root, 'responsable', r.texto, r.texto); });
     bindSel(root, 'responsable', 'Responsable de la actividad', () => nombresAdmin(), null, libreNombre);
     bindSel(root, 'supervisor', 'Supervisor a cargo', supervisoresAts, null, null);
-    $('#atsSupAv', root).innerHTML = supervisoresAts().length ? '' : '<div class="aviso">No hay supervisores cargados. El administrador debe agregarlos en <b>Mi cuenta → Administrar maestros</b> (tabla Supervisores, o con puesto Supervisor en Administradores).</div>';
+    $('#atsSupAv', root).innerHTML = supervisoresAts().length ? '' : '<div class="aviso">No hay supervisores cargados. El administrador debe agregarlos en <b>Mi cuenta → Administrar maestros → Personal</b>, con puesto Supervisor.</div>';
     { const us = ult('ats', 'supervisor', ''); if (us && supervisoresAts().some(x => x.valor === us)) selSet(root, 'supervisor', us, us); }   // el mismo de la última vez; se puede cambiar
     const pl = () => (S.plantios[$('[name=zafra]', root).value] || []);
     const frenteElegido = () => $('[name=frente]', root).value;

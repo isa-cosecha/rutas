@@ -150,3 +150,12 @@ details.mods[open] summary{border-color:var(--amber)}
 .mstwrap{max-height:380px}.admt.mst td{vertical-align:middle}.admt.mst input,.admt.mst select{margin:0;min-width:90px;width:100%}
 .admt.mst tr.inact td:not(:last-child){opacity:.5}.admt.mst tr.guardando td{opacity:.6}.admt.mst tr.sucia td{background:rgba(242,177,52,.08)}.admt.mst tr.mnew td{background:rgba(125,211,252,.07)}
 #mstMsg{min-height:18px;font-size:13px;color:var(--amber)}#mstMsg[data-ok="1"]{color:#8fd9a8}
+
+/* altas masivas */
+#altTexto{width:100%;box-sizing:border-box;font-family:ui-monospace,Consolas,monospace;font-size:12px;margin:6px 0;resize:vertical}
+.altfile{display:inline-block;cursor:pointer;border:1px solid var(--line);border-radius:6px;padding:6px 10px;font-size:13px;margin-left:8px}
+.altfile input{position:absolute;width:1px;height:1px;opacity:0;pointer-events:none}.altfile:focus-within{outline:2px solid var(--amber)}
+#altT td,#altCT td{font-size:12.5px;vertical-align:top}#altT tr.e-ok td:last-child{color:#6fcf8e}#altT tr.e-existe td:last-child{color:var(--amber)}#altT tr.e-error td:last-child{color:#ff8f8f}
+#altCT code{font-size:14px;letter-spacing:1px}
+#altAdmL:not([hidden]){display:flex;gap:6px;align-items:center;margin:6px 0}
+#altAdmL[hidden],#altCods[hidden],#altRes[hidden]{display:none!important}

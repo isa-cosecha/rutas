@@ -189,6 +189,101 @@ function initAdminUsuarios() {
   }, true);
   $('usrDlg').addEventListener('close', () => { vaciarForms(); });
   document.addEventListener('visibilitychange', () => { if (document.hidden) vaciarForms(); });
+  /* ==================== ALTAS MASIVAS (plantilla CSV o filas pegadas) ==================== */
+  const ALT_LOTE = 30;                      // usuarios por petición al crear (cada uno calcula el hash de su clave temporal en el servidor)
+  let altOk = [], altFilas = [], altRes = [], altCodigos = [];
+  const sinAc = t => String(t == null ? '' : t).normalize('NFD').replace(/[\u0300-\u036f]/g, '').trim().toLowerCase();
+  const altMsg = (t, ok) => { const e = $('altMsg'); e.textContent = t || ''; e.style.color = t ? (ok ? '' : 'var(--amber)') : ''; };
+  const csvCelda = v => { const s = String(v == null ? '' : v); return /[;"\n\r,]/.test(s) ? '"' + s.replace(/"/g, '""') + '"' : s; };
+  function bajar(nombre, texto) {          // CSV con BOM (Excel lo abre con tildes) y la indicación sep=; (Excel abre las columnas bien en cualquier idioma)
+    const a = document.createElement('a'), u = URL.createObjectURL(new Blob(['\uFEFF' + texto], {type: 'text/csv;charset=utf-8'}));
+    a.href = u; a.download = nombre; document.body.appendChild(a); a.click(); a.remove(); setTimeout(() => URL.revokeObjectURL(u), 4000);
+  }
+  function altPlantilla() {
+    const ids = forms.map(f => f.id).join(', '), l = [
+      'sep=;',
+      '# PLANTILLA DE ALTAS MASIVAS. Las líneas que empiezan con # se ignoran. Llena una fila por persona debajo del encabezado.',
+      '# Usuario: 3 a 30 caracteres (letras, números, punto, guion o guion bajo), sin espacios. Nombre: el que verá la gente (si lo dejas vacío se usa el usuario).',
+      '# Rol: ' + roles.join(' | ') + '. El "Administrador de frente" necesita Ficha (3 a 8 dígitos).',
+      '# Formularios: todos, ninguno o una lista separada por comas con: ' + ids + '. Vacío = todos. (No aplica al rol Consulta.)',
+      '# Planificacion: Sí o No (si puede registrar la planificación en el mapa). Vacío = Sí.',
+      '# Ejemplo: jperez;Juan Pérez;Supervisor;;todos;Sí',
+      '# Ejemplo: mlopez;María López;Administrador de frente;46207;combustible,motos,ats;Sí',
+      'Usuario;Nombre;Rol;Ficha;Formularios;Planificacion'];
+    bajar('plantilla_altas_usuarios.csv', l.join('\r\n') + '\r\n'); altMsg('Plantilla descargada. Llénala, guárdala como CSV y súbela, o copia las celdas y pégalas aquí.', true);
+  }
+  function altPartir(l, sep) { const o = []; let c = '', q = false; for (let i = 0; i < l.length; i++) { const x = l[i]; if (q) { if (x === '"') { if (l[i + 1] === '"') { c += '"'; i++; } else q = false; } else c += x; } else if (x === '"') q = true; else if (x === sep) { o.push(c); c = ''; } else c += x; } o.push(c); return o.map(s => s.trim()); }
+  const ALT_NOMBRES = {usuario: ['usuario', 'user', 'login'], nombre: ['nombre', 'nombre completo'], rol: ['rol'], ficha: ['ficha'], formularios: ['formularios', 'formulario'], planificacion: ['planificacion']};
+  function altParsear(txt) {                // → {filas} o {error}
+    const util = []; String(txt || '').replace(/^\uFEFF/, '').split(/\r\n|\n|\r/).forEach((l, i) => { const t = l.trim(); if (t && t[0] !== '#' && !/^sep=/i.test(t)) util.push({n: i + 1, l}); });
+    if (!util.length) return {error: 'No hay nada que revisar: pega las filas o sube la plantilla llena (con su encabezado).'};
+    const h = util[0].l, cuenta = c => h.split(c).length - 1, sep = [['\t', cuenta('\t')], [';', cuenta(';')], [',', cuenta(',')]].sort((a, b) => b[1] - a[1])[0];
+    if (!sep[1]) return {error: 'No reconozco las columnas. La primera fila debe ser el encabezado: Usuario;Nombre;Rol;Ficha;Formularios;Planificacion.'};
+    const enc = altPartir(h, sep[0]).map(sinAc), idx = {};
+    Object.keys(ALT_NOMBRES).forEach(k => { const i = enc.findIndex(x => ALT_NOMBRES[k].includes(x)); if (i >= 0) idx[k] = i; });
+    const falta = ['usuario', 'rol'].filter(k => idx[k] === undefined);
+    if (falta.length) return {error: 'Al encabezado le falta la columna ' + falta.map(x => x[0].toUpperCase() + x.slice(1)).join(' y ') + '. Usa la plantilla: Usuario;Nombre;Rol;Ficha;Formularios;Planificacion.'};
+    const filas = [];
+    util.slice(1).forEach(({n, l}) => { const c = altPartir(l, sep[0]); if (c.every(x => x === '')) return; const f = {n}; Object.keys(idx).forEach(k => { f[k] = c[idx[k]] === undefined ? '' : c[idx[k]]; }); filas.push(f); });
+    if (!filas.length) return {error: 'La plantilla no tiene filas debajo del encabezado.'};
+    if (filas.length > 500) return {error: 'Son ' + filas.length + ' filas: el máximo por revisión es 500. Divide el archivo.'};
+    return {filas};
+  }
+  async function altLeerArchivo(file) {
+    if (file.size > 1500000) throw new Error('El archivo es demasiado grande para ser una plantilla de altas.');
+    const buf = await file.arrayBuffer(), b = new Uint8Array(buf);
+    if (b[0] === 0x50 && b[1] === 0x4B) throw new Error('Ese archivo es de Excel (.xlsx). Guárdalo como CSV (Archivo → Guardar como → CSV), o copia las celdas y pégalas en el cuadro.');
+    try { return new TextDecoder('utf-8', {fatal: true}).decode(buf); } catch { return new TextDecoder('windows-1252').decode(buf); }   // el "CSV" de Excel suele guardarse en ANSI: así las tildes no se dañan
+  }
+  function altLimpiar() { altOk = []; altFilas = []; altRes = []; $('altRes').hidden = true; $('altT').innerHTML = ''; $('altCrear').disabled = true; $('altAdmL').hidden = true; $('altAdm').checked = false; altMsg(''); }
+  function altCerrarCodigos() { altCodigos = []; $('altCT').innerHTML = ''; $('altCods').hidden = true; }
+  async function altRevisar() {
+    altCerrarCodigos(); altMsg('Revisando…', true); $('altRevisar').disabled = true;
+    const p = altParsear($('altTexto').value);
+    if (p.error) { $('altRes').hidden = true; altMsg(p.error); $('altRevisar').disabled = false; return; }
+    const j = await llamar('usr_altas', {filas: p.filas, simular: true}); $('altRevisar').disabled = false;
+    if (!j) { altMsg('No se pudo revisar: ' + (ultErr || 'error desconocido')); return; }
+    altFilas = p.filas; altRes = j.resultados; altOk = altFilas.filter(f => (altRes.find(r => r.n === f.n) || {}).estado === 'ok');
+    $('altT').innerHTML = altRes.map(r => `<tr class="e-${r.estado}"><td>${r.n}</td><td>${esc(r.usuario)}</td><td>${esc(r.nombre || '')}</td><td>${esc(r.rol || '')}</td><td>${esc(r.ficha || '')}</td><td>${r.estado === 'ok' ? '✓ Se creará' + (r.formularios && r.formularios !== 'todos' ? ' (formularios: ' + esc(r.formularios) + ')' : '') + (r.planificacion === false ? ' · sin planificación' : '') : r.estado === 'existe' ? 'Ya existe: se omite' : '✗ ' + esc(r.mensaje)}</td></tr>`).join('');
+    $('altResum').textContent = `${altRes.length} fila(s): ${j.ok_n} se crearán · ${j.existen} ya existen (se omiten) · ${j.errores} con error (se omiten, corrígelas en tu archivo y vuelve a revisar).`;
+    const hayAdm = altRes.some(r => r.estado === 'ok' && r.rol === 'Administrador'); $('altAdmL').hidden = !hayAdm; $('altAdm').checked = false;
+    $('altCrear').disabled = !j.ok_n; $('altCrear').textContent = j.ok_n ? `Crear ${j.ok_n} usuario${j.ok_n === 1 ? '' : 's'}` : 'No hay usuarios para crear'; $('altRes').hidden = false; altMsg('');
+  }
+  async function altCrear() {
+    if (!altOk.length) return;
+    if (altRes.some(r => r.estado === 'ok' && r.rol === 'Administrador') && !$('altAdm').checked) { altMsg('Marca la confirmación de los usuarios con rol Administrador para continuar.'); return; }
+    if (!confirm(`¿Crear ${altOk.length} usuario(s) ahora?\n\nCada uno recibirá un código temporal que se mostrará UNA sola vez.`)) return;
+    $('altCrear').disabled = true; $('altRevisar').disabled = true; const out = []; let hechos = 0, parar = '';
+    for (let i = 0; i < altOk.length; i += ALT_LOTE) {
+      altMsg(`Creando ${Math.min(i + ALT_LOTE, altOk.length)} de ${altOk.length}…`, true);
+      const j = await llamar('usr_altas', {filas: altOk.slice(i, i + ALT_LOTE), simular: false});
+      if (!j) { parar = ultErr || 'error desconocido'; break; }
+      out.push(...j.resultados); hechos += j.creados;
+    }
+    $('altRevisar').disabled = false;
+    altMostrarCodigos(out);
+    altMsg(parar ? `Se detuvo tras crear ${hechos} de ${altOk.length}: ${parar}. Los ya creados están abajo; pulsa Revisar para continuar con los que faltan (los creados aparecerán como "ya existe").` : `Listo: ${hechos} usuario(s) creado(s) ✓`, !parar);
+    $('altRes').hidden = true; altOk = []; await cargar();
+  }
+  function altMostrarCodigos(res) {
+    altCodigos = res.filter(r => r.estado === 'ok' && r.codigo).map(r => ({usuario: r.usuario, nombre: r.nombre, rol: r.rol, codigo: r.codigo, estado: 'Creado'}));
+    const otros = res.filter(r => r.estado !== 'ok');
+    if (!altCodigos.length) { $('altCods').hidden = true; return; }
+    $('altCodT').innerHTML = `<b>${altCodigos.length} usuario(s) creado(s).</b>` + (otros.length ? ` ${otros.length} se omitieron (ya existían o tenían error).` : '');
+    $('altCT').innerHTML = altCodigos.map(c => `<tr><td>${esc(c.usuario)}</td><td>${esc(c.nombre)}</td><td><code>${esc(c.codigo)}</code></td></tr>`).join('');
+    $('altCods').hidden = false; $('altCods').scrollIntoView({block: 'nearest'});
+  }
+  $('altPlantilla').onclick = e => { e.preventDefault(); altPlantilla(); };
+  $('altArchivo').onchange = async e => { const f = e.target.files[0]; e.target.value = ''; if (!f) return; try { $('altTexto').value = await altLeerArchivo(f); altMsg(`Archivo leído: ${f.name}. Pulsa Revisar.`, true); altLimpiarResultado(); } catch (x) { altMsg(x.message); } };
+  const altLimpiarResultado = () => { altOk = []; $('altRes').hidden = true; $('altCrear').disabled = true; };
+  $('altTexto').addEventListener('input', altLimpiarResultado);   // si cambias el texto, hay que volver a revisar
+  $('altRevisar').onclick = e => { e.preventDefault(); altRevisar(); };
+  $('altLimpiar').onclick = e => { e.preventDefault(); $('altTexto').value = ''; altLimpiar(); altCerrarCodigos(); };
+  $('altCrear').onclick = e => { e.preventDefault(); altCrear(); };
+  $('altOk').onclick = e => { e.preventDefault(); altCerrarCodigos(); };
+  $('altCopiar').onclick = async e => { e.preventDefault(); try { await navigator.clipboard.writeText('Usuario\tNombre\tCódigo temporal\n' + altCodigos.map(c => `${c.usuario}\t${c.nombre}\t${c.codigo}`).join('\n')); UI.toast('Copiado'); } catch { UI.toast('No se pudo copiar: usa la descarga.'); } };
+  $('altBajar').onclick = e => { e.preventDefault(); bajar('altas_' + new Date().toISOString().slice(0, 10) + '.csv', ['sep=;', ['Usuario', 'Nombre', 'Rol', 'Codigo temporal', 'Estado'].join(';'), ...altCodigos.map(c => [c.usuario, c.nombre, c.rol, c.codigo, c.estado].map(csvCelda).join(';'))].join('\r\n') + '\r\n'); };
+  $('usrDlg').addEventListener('close', () => { altCerrarCodigos(); });   // los códigos temporales no se quedan en pantalla al cerrar
   $('usrT').addEventListener('keydown', e => { if (e.key === 'Enter' && e.target.classList.contains('un')) { e.preventDefault(); e.target.blur(); } });
   $('usrT').addEventListener('click', async e => {
     const b = e.target.closest('button'); if (!b) return; const u = fila(b); if (!u) return;

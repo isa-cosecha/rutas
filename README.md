@@ -194,3 +194,9 @@ Las de los vecinos se achican y se vuelven más translúcidas cuanto más lejos 
 - `admin_usuarios.js`: `llamar()` serializa las llamadas (`colaU`); las casillas de formularios usan `programarForms()` / `lanzarForms()` (guardado agrupado del estado final, 600 ms de espera) y `vaciarForms()` se ejecuta antes de volver a dibujar la tabla, al cerrar la lista (`toggle`), al cerrar el diálogo y al ocultar la pestaña. La pantalla no se revierte nunca por un fallo.
 - Motivo de fondo: `doPost` toma `LockService.getScriptLock()` con `waitLock(20000)`; muchas peticiones simultáneas de un mismo cliente agotan la espera. El simulador (`/__bloqueo`) imita ese turno único para probarlo (`e2e_guardados.py`).
 - Combustible de motos: sin campo "Abastecida desde"; `d.cisterna = d.motor` (el servidor sigue aceptando un origen distinto en registros viejos).
+
+## Altas masivas desde la plataforma (v15)
+
+- Servidor: `usr_altas` (`accionUsrAltas_`) con `simular: true` para revisar (hasta `ALTAS_MAX_REVISAR` = 500 filas) y `simular: false` para crear (hasta `ALTAS_MAX_CREAR` = 40 por envío; una sola escritura por lote y una para la auditoría). `validarAlta_` aplica las mismas reglas que `usr_crear`; los usuarios existentes se omiten sin tocar su clave. Los códigos solo viajan en la respuesta.
+- Cliente: sección `#usrAltas` del diálogo de usuarios (`admin_usuarios.js`): plantilla CSV con BOM y `sep=;`, lectura de CSV (UTF-8 o ANSI; `;`, `,` o tabulador), filas pegadas, revisión, creación en lotes de `ALT_LOTE` = 30 y pantalla de códigos de un solo uso.
+- Pruebas: `test_altas.js` (servidor) y `e2e_altas.py` (navegador).

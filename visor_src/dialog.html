@@ -117,6 +117,25 @@
     <div id="usrNM" class="admsub" role="alert"></div>
   </div>
 
+  <details id="usrAltas" class="admstep"><summary><b>Altas masivas</b> <span class="admsub" style="margin:0">(varios usuarios a la vez, desde una plantilla)</span></summary>
+    <div class="admsub">1) Descarga la plantilla y llénala en Excel, una fila por persona. 2) Súbela o pega aquí las filas (puedes copiar las celdas desde Excel o Google Sheets). 3) Revisa el resultado y crea. Los usuarios que <b>ya existen se omiten</b>: no se les cambia la clave.</div>
+    <div class="admrow"><button id="altPlantilla" type="button">⬇ Descargar plantilla</button><label class="altfile">Subir archivo (CSV)<input id="altArchivo" type="file" accept=".csv,.tsv,.txt,text/csv,text/plain,text/tab-separated-values"></label></div>
+    <textarea id="altTexto" rows="5" spellcheck="false" autocomplete="off" aria-label="Filas de altas masivas" placeholder="…o pega aquí las filas copiadas de Excel, con su encabezado:&#10;Usuario   Nombre   Rol   Ficha   Formularios   Planificacion"></textarea>
+    <div class="admrow"><button id="altRevisar" type="button" class="primary">Revisar</button><button id="altLimpiar" type="button">Limpiar</button><span id="altMsg" class="admsub" role="alert"></span></div>
+    <div id="altRes" hidden>
+      <div id="altResum" class="admsub"></div>
+      <div class="usrwrap"><table class="admt"><thead><tr><th>Fila</th><th>Usuario</th><th>Nombre</th><th>Rol</th><th>Ficha</th><th>Resultado</th></tr></thead><tbody id="altT"></tbody></table></div>
+      <label id="altAdmL" class="admsub" hidden><input id="altAdm" type="checkbox"> Confirmo que habrá usuarios con rol <b>Administrador</b> (acceso total a la plataforma).</label>
+      <div class="admrow"><button id="altCrear" type="button" class="primary" disabled>Crear usuarios</button></div>
+    </div>
+    <div id="altCods" class="codbox" hidden role="status">
+      <div id="altCodT"></div>
+      <div class="usrwrap"><table class="admt"><thead><tr><th>Usuario</th><th>Nombre</th><th>Código temporal</th></tr></thead><tbody id="altCT"></tbody></table></div>
+      <div class="admsub">Entrega cada código a su dueño por un canal seguro (no por el chat de grupo). <b>Se muestran una sola vez</b>: al cerrar esta ventana desaparecen. Al entrar con él, cada persona deberá crear su propia clave. El archivo que descargues también los contiene: guárdalo con cuidado y bórralo después.</div>
+      <div class="admrow"><button id="altCopiar" type="button">Copiar todo</button><button id="altBajar" type="button">⬇ Descargar resultado (CSV)</button><button id="altOk" type="button" class="primary">Entendido, ya los anoté</button></div>
+    </div>
+  </details>
+
   <div class="admstep">
     <div class="admrow"><b>Usuarios</b><input id="usrQ" type="search" placeholder="Buscar por usuario, nombre o rol" autocomplete="off" aria-label="Buscar usuario" style="max-width:300px"><span id="usrCnt" class="admsub"></span></div>
     <div class="usrwrap"><table class="admt usr"><thead><tr><th>Usuario</th><th>Nombre</th><th>Rol</th><th>Ficha</th><th>Formularios y planificación</th><th>Estado</th><th>Último ingreso</th><th></th></tr></thead><tbody id="usrT"></tbody></table></div>
